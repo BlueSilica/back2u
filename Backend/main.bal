@@ -9,41 +9,21 @@ final mongodb:Client mongoDb = check new ({
 
 // Test MongoDB connection on startup
 public function main() {
-    // Test connection by listing databases
-    var result = mongoDb->listDatabaseNames();
-    if result is error {
-        io:println("MongoDB connection failed: " + result.message());
+    // Connect to btu database
+    var btuDb = mongoDb->getDatabase("btu");
+    if btuDb is error {
+        io:println("Failed to connect to 'btu' database: " + btuDb.message());
+        return;
+    }
+    
+    // Test connection by listing collections
+    var collections = btuDb->listCollectionNames();
+    if collections is error {
+        io:println("MongoDB connection to 'btu' database failed: " + collections.message());
     } else {
         io:println("MongoDB connection successful!");
-        io:println("Available databases: ", result);
-        
-        // Create database "btu" by creating a collection in it
-        var btuDb = mongoDb->getDatabase("btu");
-        if btuDb is error {
-            io:println("Failed to get btu database: " + btuDb.message());
-            return;
-        }
-        
-        var usersCollection = btuDb->getCollection("users");
-        if usersCollection is error {
-            io:println("Failed to get users collection: " + usersCollection.message());
-            return;
-        }
-        
-        // Insert a dummy document to create the database (MongoDB creates DB when first document is inserted)
-        map<json> sampleDoc = {
-            "_id": "init",
-            "message": "Database btu initialized",
-            "createdAt": "2025-08-20"
-        };
-        
-        var insertResult = usersCollection->insertOne(sampleDoc);
-        if insertResult is error {
-            io:println("Failed to create btu database: " + insertResult.message());
-        } else {
-            io:println("Database 'btu' created successfully!");
-            io:println("Sample document inserted successfully");
-        }
+        io:println("Connected to 'btu' database");
+        io:println("Available collections: ", collections);
     }
 }
 
