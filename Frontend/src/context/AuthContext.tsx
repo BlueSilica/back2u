@@ -10,85 +10,164 @@ interface User {
   itemsReported: number
   itemsReturned: number
   reputation: number
+  // ...added optional contact fields
+  phoneNumber?: string
+  address?: {
+    number: string
+    address: string
+    postalCode: string
+    city: string
+    country: string
+  }
 }
 
 interface AuthContextType {
   user: User | null
   login: (email: string, password: string) => Promise<boolean>
-  signup: (name: string, email: string, password: string) => Promise<boolean>
+  // extended signup signature to accept phoneNumber and address
+  signup: (
+    name: string,
+    email: string,
+    password: string,
+    phoneNumber?: string,
+    address?: { number: string; address: string; postalCode: string; city: string; country: string }
+  ) => Promise<boolean>
   logout: () => void
   isLoading: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-// Dummy user data
-const dummyUsers: User[] = [
-  {
-    id: '1',
-    name: 'John Doe',
-    email: 'john@example.com',
-    avatar: '👨‍💼',
-    joinedDate: '2024-01-15',
-    itemsReported: 5,
-    itemsReturned: 12,
-    reputation: 4.8
-  },
-  {
-    id: '2',
-    name: 'Sarah Johnson',
-    email: 'sarah@example.com',
-    avatar: '👩‍🦳',
-    joinedDate: '2023-11-20',
-    itemsReported: 8,
-    itemsReturned: 15,
-    reputation: 4.9
-  }
-]
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
-  const login = async (email: string, _password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true)
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    const foundUser = dummyUsers.find(u => u.email === email)
-    if (foundUser) {
-      setUser(foundUser)
-      localStorage.setItem('user', JSON.stringify(foundUser))
+    try {
+      const response = await fetch('http://localhost:8080/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        const loggedInUser: User = {
+          id: data.user._id || Date.now().toString(),
+          name: `${data.user.firstName || ''} ${data.user.lastName || ''}`.trim() || 'User',
+          email: data.user.email,
+          avatar: '👤',
+          joinedDate: data.user.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+          itemsReported: 0,
+          itemsReturned: 0,
+          reputation: 5.0,
+          phoneNumber: data.user.phoneNumber,
+          address: data.user.address
+        }
+        
+        setUser(loggedInUser)
+        localStorage.setItem('user', JSON.stringify(loggedInUser))
+        setIsLoading(false)
+        return true
+      } else {
+        setIsLoading(false)
+        return false
+      }
+    } catch (error) {
+      console.error('Login error:', error)
       setIsLoading(false)
-      return true
+      return false
     }
-    
-    setIsLoading(false)
-    return false
   }
 
-  const signup = async (name: string, email: string, _password: string): Promise<boolean> => {
+  // Updated signup to call backend API
+  const signup = async (
+    name: string,
+    email: string,
+    password: string,
+    phoneNumber?: string,
+    address?: { number: string; address: string; postalCode: string; city: string; country: string }
+  ): Promise<boolean> => {
     setIsLoading(true)
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    const newUser: User = {
-      id: Date.now().toString(),
-      name,
-      email,
-      avatar: '🆕',
-      joinedDate: new Date().toISOString().split('T')[0],
-      itemsReported: 0,
-      itemsReturned: 0,
-      reputation: 5.0
+    try {
+      // Split name into firstName and lastName
+      const nameParts = name.trim().split(' ')
+      const firstName = nameParts[0] || ''
+      const lastName = nameParts.slice(1).join(' ') || ''
+
+      console.log('Signup payload:', {
+        email,
+        phoneNumber: phoneNumber || '',
+        address: address || {
+          number: '',
+          address: '',
+          postalCode: '',
+          city: '',
+          country: ''
+        },
+        password,
+        firstName,
+        lastName
+      })
+
+      const response = await fetch('http://localhost:8080/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          phoneNumber: phoneNumber || '',
+          address: address || {
+            number: '',
+            address: '',
+            postalCode: '',
+            city: '',
+            country: ''
+          },
+          password,
+          firstName,
+          lastName
+        }),
+      })
+
+      const responseData = await response.json()
+      console.log('Signup response:', responseData)
+
+      if (response.ok && responseData.user) {
+        // User created successfully - use data from backend response
+        const newUser: User = {
+          id: Date.now().toString(),
+          name: name,
+          email: responseData.user.email,
+          avatar: '🆕',
+          joinedDate: responseData.user.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+          itemsReported: 0,
+          itemsReturned: 0,
+          reputation: 5.0,
+          phoneNumber: responseData.user.phoneNumber,
+          address: responseData.user.address
+        }
+        
+        setUser(newUser)
+        localStorage.setItem('user', JSON.stringify(newUser))
+        setIsLoading(false)
+        return true
+      } else {
+        console.error('Signup failed:', responseData)
+        setIsLoading(false)
+        return false
+      }
+    } catch (error) {
+      console.error('Signup error:', error)
+      setIsLoading(false)
+      return false
     }
-    
-    setUser(newUser)
-    localStorage.setItem('user', JSON.stringify(newUser))
-    setIsLoading(false)
-    return true
   }
 
   const logout = () => {

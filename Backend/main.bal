@@ -3,6 +3,14 @@ import ballerina/io;
 import ballerinax/mongodb;
 import Backend.user;
 
+// CORS configuration
+http:CorsConfig corsConfig = {
+    allowOrigins: ["http://localhost:5173", "http://localhost:3000"],
+    allowCredentials: false,
+    allowHeaders: ["CORELATION_ID", "Authorization", "Content-Type", "ngrok-skip-browser-warning"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+};
+
 // Global MongoDB client
 final mongodb:Client mongoDb = check new ({
     connection: "mongodb+srv://adeepashashintha:0C71Gbok4YgQgKgb@cluster0.wapt0hl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
@@ -29,6 +37,9 @@ public function main() {
 }
 
 // HTTP service running on port 8080
+@http:ServiceConfig {
+    cors: corsConfig
+}
 service / on new http:Listener(8080) {
     
     // Health check endpoint
@@ -47,6 +58,19 @@ service / on new http:Listener(8080) {
         
         // Delegate to user module
         return user:handleCreateUser(btuDb, userRequest);
+    }
+
+    // Login endpoint
+    resource function post auth/login(@http:Payload user:LoginRequest loginRequest) returns json|http:BadRequest|http:InternalServerError {
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Delegate to user module
+        return user:handleUserLogin(btuDb, loginRequest);
     }
 
 }

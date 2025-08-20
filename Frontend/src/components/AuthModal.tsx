@@ -11,7 +11,13 @@ const AuthModal = ({ isOpen, onClose }: AuthModalProps) => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    password: ''
+    password: '',
+    phoneNumber: '',
+    addressNumber: '',
+    addressLine: '',
+    postalCode: '',
+    city: '',
+    country: ''
   })
   const [error, setError] = useState('')
   const { login, signup, isLoading } = useAuth()
@@ -24,17 +30,35 @@ const AuthModal = ({ isOpen, onClose }: AuthModalProps) => {
       let success = false
       if (isLogin) {
         success = await login(formData.email, formData.password)
+        if (!success) {
+          setError('Invalid email or password')
+        }
       } else {
-        success = await signup(formData.name, formData.email, formData.password)
+        // pass additional fields to signup
+        success = await signup(
+          formData.name,
+          formData.email,
+          formData.password,
+          formData.phoneNumber,
+          {
+            number: formData.addressNumber,
+            address: formData.addressLine,
+            postalCode: formData.postalCode,
+            city: formData.city,
+            country: formData.country
+          }
+        )
+        if (!success) {
+          setError('Account creation failed. Email might already exist.')
+        }
       }
 
       if (success) {
         onClose()
-        setFormData({ name: '', email: '', password: '' })
-      } else {
-        setError(isLogin ? 'Invalid email or password' : 'Account creation failed')
+        setFormData({ name: '', email: '', password: '', phoneNumber: '', addressNumber: '', addressLine: '', postalCode: '', city: '', country: '' })
       }
-  } catch {
+    } catch (err) {
+      console.error('Form submission error:', err)
       setError('Something went wrong. Please try again.')
     }
   }
@@ -49,8 +73,8 @@ const AuthModal = ({ isOpen, onClose }: AuthModalProps) => {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl p-8 w-full max-w-md relative" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 flex sm:items-center items-start justify-center z-50 p-4 overflow-auto" onClick={onClose}>
+      <div className="bg-white rounded-2xl p-6 w-full max-w-md relative max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <button className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl" onClick={onClose}>×</button>
 
         <div className="text-center mb-8">
@@ -103,6 +127,92 @@ const AuthModal = ({ isOpen, onClose }: AuthModalProps) => {
             />
           </div>
 
+          {!isLogin && (
+            <div>
+              <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+              <input
+                type="tel"
+                id="phoneNumber"
+                name="phoneNumber"
+                value={formData.phoneNumber}
+                onChange={handleChange}
+                placeholder="+1234567890"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+              />
+            </div>
+          )}
+
+          {!isLogin && (
+            <>
+              <div>
+                <label htmlFor="addressNumber" className="block text-sm font-medium text-gray-700 mb-2">House / Unit No</label>
+                <input
+                  type="text"
+                  id="addressNumber"
+                  name="addressNumber"
+                  value={formData.addressNumber}
+                  onChange={handleChange}
+                  placeholder="123"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="addressLine" className="block text-sm font-medium text-gray-700 mb-2">Address Line</label>
+                <input
+                  type="text"
+                  id="addressLine"
+                  name="addressLine"
+                  value={formData.addressLine}
+                  onChange={handleChange}
+                  placeholder="Main Street"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="postalCode" className="block text-sm font-medium text-gray-700 mb-2">Postal Code</label>
+                  <input
+                    type="text"
+                    id="postalCode"
+                    name="postalCode"
+                    value={formData.postalCode}
+                    onChange={handleChange}
+                    placeholder="12345"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="city" className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                  <input
+                    type="text"
+                    id="city"
+                    name="city"
+                    value={formData.city}
+                    onChange={handleChange}
+                    placeholder="New York"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="country" className="block text-sm font-medium text-gray-700 mb-2">Country</label>
+                <input
+                  type="text"
+                  id="country"
+                  name="country"
+                  value={formData.country}
+                  onChange={handleChange}
+                  placeholder="USA"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                />
+              </div>
+            </>
+          )}
+
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg">
               {error}
@@ -122,7 +232,7 @@ const AuthModal = ({ isOpen, onClose }: AuthModalProps) => {
               onClick={() => {
                 setIsLogin(!isLogin)
                 setError('')
-                setFormData({ name: '', email: '', password: '' })
+                setFormData({ name: '', email: '', password: '', phoneNumber: '', addressNumber: '', addressLine: '', postalCode: '', city: '', country: '' })
               }}
             >
               {isLogin ? 'Sign Up' : 'Sign In'}
@@ -132,21 +242,8 @@ const AuthModal = ({ isOpen, onClose }: AuthModalProps) => {
 
         {isLogin && (
           <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-600 mb-2">Demo Accounts (for testing):</p>
-            <div className="flex gap-2">
-              <button 
-                className="px-3 py-2 bg-white border border-blue-200 rounded-lg text-sm hover:bg-blue-50"
-                onClick={() => setFormData({ ...formData, email: 'john@example.com', password: 'password123' })}
-              >
-                👨‍💼 John Doe
-              </button>
-              <button 
-                className="px-3 py-2 bg-white border border-blue-200 rounded-lg text-sm hover:bg-blue-50"
-                onClick={() => setFormData({ ...formData, email: 'sarah@example.com', password: 'password123' })}
-              >
-                👩‍🦳 Sarah Johnson
-              </button>
-            </div>
+            <p className="text-sm text-blue-600 mb-2">Demo Note:</p>
+            <p className="text-xs text-blue-500">You can create a new account or login with any account you've created previously.</p>
           </div>
         )}
       </div>

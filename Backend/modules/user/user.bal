@@ -37,6 +37,19 @@ public type User record {
     time:Utc updatedAt;
 };
 
+// User login request
+public type LoginRequest record {
+    string email;
+    string password;
+};
+
+// Login response
+public type LoginResponse record {
+    string message;
+    json user;
+    string token?;
+};
+
 // Response types
 public type UserResponse record {
     string message;
@@ -51,6 +64,12 @@ public type ErrorResponse record {
 public function hashPassword(string password) returns string|error {
     byte[] hashedPassword = crypto:hashSha256(password.toBytes());
     return hashedPassword.toBase64();
+}
+
+// Verify password function
+public function verifyPassword(string password, string hashedPassword) returns boolean|error {
+    string newHash = check hashPassword(password);
+    return newHash == hashedPassword;
 }
 
 // Create user function
@@ -128,6 +147,63 @@ public function handleCreateUser(mongodb:Database db, CreateUserRequest userRequ
             "lastName": newUser.lastName,
             "picURL": newUser.picURL,
             "createdAt": newUser.createdAt.toString()
+        }
+    };
+    
+    return response;
+}
+
+// Get user by email function
+public function getUserByEmail(mongodb:Database db, string email) returns User|error? {
+    mongodb:Collection usersCollection = check db->getCollection("users");
+    User? result = check usersCollection->findOne({email: email});
+    return result;
+}
+
+// Handle user login
+public function handleUserLogin(mongodb:Database db, LoginRequest loginRequest) returns json|http:BadRequest|http:InternalServerError {
+    // Get user by email
+    User|error? userResult = getUserByEmail(db, loginRequest.email);
+    if userResult is error {
+        return http:INTERNAL_SERVER_ERROR;
+    }
+    
+    if userResult is () {
+        json errorResponse = {"error": "Invalid email or password"};
+        return <http:BadRequest>{body: errorResponse};
+    }
+    
+    User user = <User>userResult;
+    
+    // Verify password
+    boolean|error passwordValid = verifyPassword(loginRequest.password, user.passwordHash);
+    if passwordValid is error {
+        return http:INTERNAL_SERVER_ERROR;
+    }
+    
+    if !passwordValid {
+        json errorResponse = {"error": "Invalid email or password"};
+        return <http:BadRequest>{body: errorResponse};
+    }
+    
+    // Return success response (without password hash)
+    json response = {
+        "message": "Login successful",
+        "user": {
+            "_id": user._id,
+            "email": user.email,
+            "phoneNumber": user.phoneNumber,
+            "address": {
+                "number": user.address.number,
+                "address": user.address.address,
+                "postalCode": user.address.postalCode,
+                "city": user.address.city,
+                "country": user.address.country
+            },
+            "firstName": user.firstName,
+            "lastName": user.lastName,
+            "picURL": user.picURL,
+            "createdAt": user.createdAt.toString()
         }
     };
     
