@@ -19,6 +19,7 @@ public type CreateUserRequest record {
     string password;
     string firstName?;
     string lastName?;
+    string picURL?;
 };
 
 // User record stored in database
@@ -30,6 +31,7 @@ public type User record {
     string passwordHash;
     string firstName?;
     string lastName?;
+    string picURL?;
     time:Utc createdAt;
     time:Utc updatedAt;
 };
@@ -56,6 +58,7 @@ public function createUser(mongodb:Database db, CreateUserRequest userRequest) r
         passwordHash: hashedPassword,
         firstName: userRequest.firstName,
         lastName: userRequest.lastName,
+        picURL: userRequest.picURL,
         createdAt: currentTime,
         updatedAt: currentTime
     };

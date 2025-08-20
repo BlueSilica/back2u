@@ -79,6 +79,7 @@ service / on new http:Listener(8080) {
                 },
                 "firstName": newUser.firstName,
                 "lastName": newUser.lastName,
+                "picURL": newUser.picURL,
                 "createdAt": newUser.createdAt.toString()
             }
         };
