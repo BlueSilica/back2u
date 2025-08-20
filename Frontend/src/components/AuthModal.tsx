@@ -34,7 +34,7 @@ const AuthModal = ({ isOpen, onClose }: AuthModalProps) => {
       } else {
         setError(isLogin ? 'Invalid email or password' : 'Account creation failed')
       }
-    } catch (err) {
+  } catch {
       setError('Something went wrong. Please try again.')
     }
   }
