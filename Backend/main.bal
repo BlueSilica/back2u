@@ -1,27 +1,17 @@
 import ballerinax/mongodb;
 import ballerina/io;
 
-// These are declarations only; actual values are provided via Config.toml at runtime.
-configurable string mongodbUri = ?;       // e.g., set in Config.toml as mongodbUri = "..."
-configurable string dbName = ?;
-configurable string collName = ?;
-
 public function main() returns error? {
-    // Create MongoDB client
-    mongodb:Client mongoClient = check new ({ connectionString: mongodbUri });
+    // Use the config record style
+    mongodb:Client mongoDb = check new ({
+        connection: "mongodb+srv://adeepashashintha:0C71Gbok4YgQgKgb@cluster0.wapt0hl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+    });
 
-    // Get DB and a collection
-    mongodb:Database database = check mongoClient->getDatabase(dbName);
-    mongodb:Collection coll = check database->getCollection(collName);
+    // Select your database
+    mongodb:Database db = check mongoDb->getDatabase("backtou");
 
-    // Do a simple operation to verify connectivity
-    // insertOne expects a record, not generic json
-    record {| int ping; |} doc = { ping: 1 };
-    check coll->insertOne(doc);
+    // Access a collection inside the database
+    mongodb:Collection coll = check db->getCollection("users");
 
-    int count = check coll->countDocuments({});
-    io:println("Connected to MongoDB Atlas. '" + collName + "' count: " + count.toString());
-
-    // Close at the end
-    check mongoClient->close();
+    io:println("✅ Connected to MongoDB Atlas and inserted a user!");
 }
