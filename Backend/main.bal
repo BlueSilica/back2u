@@ -45,46 +45,8 @@ service / on new http:Listener(8080) {
         }
         mongodb:Database btuDb = btuDbResult;
         
-        // Check if email already exists
-        boolean|error emailExistsResult = user:emailExists(btuDb, userRequest.email);
-        if emailExistsResult is error {
-            return http:INTERNAL_SERVER_ERROR;
-        }
-        
-        if emailExistsResult {
-            json errorResponse = {"error": "Email already exists"};
-            return <http:BadRequest>{body: errorResponse};
-        }
-
-        // Create user using the user module
-        user:User|error userResult = user:createUser(btuDb, userRequest);
-        if userResult is error {
-            return http:INTERNAL_SERVER_ERROR;
-        }
-        
-        user:User newUser = userResult;
-        
-        // Return success response (without password hash)
-        json response = {
-            "message": "User created successfully",
-            "user": {
-                "email": newUser.email,
-                "phoneNumber": newUser.phoneNumber,
-                "address": {
-                    "number": newUser.address.number,
-                    "address": newUser.address.address,
-                    "postalCode": newUser.address.postalCode,
-                    "city": newUser.address.city,
-                    "country": newUser.address.country
-                },
-                "firstName": newUser.firstName,
-                "lastName": newUser.lastName,
-                "picURL": newUser.picURL,
-                "createdAt": newUser.createdAt.toString()
-            }
-        };
-        
-        return response;
+        // Delegate to user module
+        return user:handleCreateUser(btuDb, userRequest);
     }
 
 }

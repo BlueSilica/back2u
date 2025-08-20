@@ -1,5 +1,6 @@
 import ballerina/crypto;
 import ballerina/time;
+import ballerina/http;
 import ballerinax/mongodb;
 
 // User address record
@@ -34,6 +35,16 @@ public type User record {
     string picURL?;
     time:Utc createdAt;
     time:Utc updatedAt;
+};
+
+// Response types
+public type UserResponse record {
+    string message;
+    json user;
+};
+
+public type ErrorResponse record {
+    string 'error;
 };
 
 // Hash password function
@@ -77,4 +88,48 @@ public function emailExists(mongodb:Database db, string email) returns boolean|e
     mongodb:Collection usersCollection = check db->getCollection("users");
     User? result = check usersCollection->findOne({email: email});
     return result is User;
+}
+
+// Complete user creation service function
+public function handleCreateUser(mongodb:Database db, CreateUserRequest userRequest) returns json|http:BadRequest|http:InternalServerError {
+    // Check if email already exists
+    boolean|error emailExistsResult = emailExists(db, userRequest.email);
+    if emailExistsResult is error {
+        return http:INTERNAL_SERVER_ERROR;
+    }
+    
+    if emailExistsResult {
+        json errorResponse = {"error": "Email already exists"};
+        return <http:BadRequest>{body: errorResponse};
+    }
+
+    // Create user
+    User|error userResult = createUser(db, userRequest);
+    if userResult is error {
+        return http:INTERNAL_SERVER_ERROR;
+    }
+    
+    User newUser = userResult;
+    
+    // Return success response (without password hash)
+    json response = {
+        "message": "User created successfully",
+        "user": {
+            "email": newUser.email,
+            "phoneNumber": newUser.phoneNumber,
+            "address": {
+                "number": newUser.address.number,
+                "address": newUser.address.address,
+                "postalCode": newUser.address.postalCode,
+                "city": newUser.address.city,
+                "country": newUser.address.country
+            },
+            "firstName": newUser.firstName,
+            "lastName": newUser.lastName,
+            "picURL": newUser.picURL,
+            "createdAt": newUser.createdAt.toString()
+        }
+    };
+    
+    return response;
 }
