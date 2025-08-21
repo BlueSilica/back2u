@@ -160,10 +160,52 @@ public function getUserByEmail(mongodb:Database db, string email) returns User|e
     return result;
 }
 
+// Get all users function
+public function getAllUsers(mongodb:Database db) returns json[]|error {
+    mongodb:Collection usersCollection = check db->getCollection("users");
+    stream<record {}, error?> userStream = check usersCollection->find();
+    json[] users = [];
+    
+    error? result = userStream.forEach(function(record {} user) {
+        users.push(user.toJson());
+    });
+    
+    if result is error {
+        return result;
+    }
+    
+    check userStream.close();
+    return users;
+}
+
+// Handle get all users
+public function handleGetAllUsers(mongodb:Database db) returns json|http:InternalServerError {
+    json[]|error usersResult = getAllUsers(db);
+    if usersResult is error {
+        return http:INTERNAL_SERVER_ERROR;
+    }
+    
+    json[] users = usersResult;
+    
+    json response = {
+        "message": "Users retrieved successfully",
+        "users": users
+    };
+    
+    return response;
+}
+
+// Get user by email function (return JSON)
+public function getUserByEmailAsJson(mongodb:Database db, string email) returns record {}|error? {
+    mongodb:Collection usersCollection = check db->getCollection("users");
+    record {}? result = check usersCollection->findOne({email: email});
+    return result;
+}
+
 // Handle user login
 public function handleUserLogin(mongodb:Database db, LoginRequest loginRequest) returns json|http:BadRequest|http:InternalServerError {
-    // Get user by email
-    User|error? userResult = getUserByEmail(db, loginRequest.email);
+    // Get user by email as record
+    record {}|error? userResult = getUserByEmailAsJson(db, loginRequest.email);
     if userResult is error {
         return http:INTERNAL_SERVER_ERROR;
     }
@@ -173,10 +215,18 @@ public function handleUserLogin(mongodb:Database db, LoginRequest loginRequest) 
         return <http:BadRequest>{body: errorResponse};
     }
     
-    User user = <User>userResult;
+    record {} user = <record {}>userResult;
+    json userJson = user.toJson();
+    
+    // Get password hash from user JSON
+    json|error passwordHashResult = userJson.passwordHash;
+    if passwordHashResult is error {
+        return http:INTERNAL_SERVER_ERROR;
+    }
+    string passwordHash = passwordHashResult.toString();
     
     // Verify password
-    boolean|error passwordValid = verifyPassword(loginRequest.password, user.passwordHash);
+    boolean|error passwordValid = verifyPassword(loginRequest.password, passwordHash);
     if passwordValid is error {
         return http:INTERNAL_SERVER_ERROR;
     }
@@ -186,25 +236,10 @@ public function handleUserLogin(mongodb:Database db, LoginRequest loginRequest) 
         return <http:BadRequest>{body: errorResponse};
     }
     
-    // Return success response (without password hash)
+    // Return success response (remove password hash)
     json response = {
         "message": "Login successful",
-        "user": {
-            "_id": user._id,
-            "email": user.email,
-            "phoneNumber": user.phoneNumber,
-            "address": {
-                "number": user.address.number,
-                "address": user.address.address,
-                "postalCode": user.address.postalCode,
-                "city": user.address.city,
-                "country": user.address.country
-            },
-            "firstName": user.firstName,
-            "lastName": user.lastName,
-            "picURL": user.picURL,
-            "createdAt": user.createdAt.toString()
-        }
+        "user": userJson
     };
     
     return response;

@@ -6,12 +6,15 @@ import Footer from './components/Footer'
 import Dashboard from './components/Dashboard'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import './App.css'
+import ChatPage from './components/ChatSystem/ChatPage'
 
 const AppContent = () => {
   const { user } = useAuth()
-  const [currentView, setCurrentView] = useState<'home' | 'dashboard'>('home')
+  const [currentView, setCurrentView] = useState<'home' | 'dashboard' | 'chat'>(() => {
+    return window.location.pathname === '/chat' ? 'chat' : 'home'
+  })
 
-  const handleNavigation = (view: 'home' | 'dashboard') => {
+  const handleNavigation = (view: 'home' | 'dashboard' | 'chat') => {
     setCurrentView(view)
   }
 
@@ -24,6 +27,8 @@ const AppContent = () => {
             <Hero />
             <Features />
           </>
+        ) : currentView === 'chat' ? (
+          <ChatPage />
         ) : user ? (
           <Dashboard />
         ) : (

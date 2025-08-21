@@ -47,6 +47,19 @@ service / on new http:Listener(8080) {
         return {"status": "OK", "message": "Server is running on port 8080"};
     }
 
+    // Get all users endpoint
+    resource function get users() returns json|http:InternalServerError {
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Delegate to user module
+        return user:handleGetAllUsers(btuDb);
+    }
+
     // Create user endpoint
     resource function post users(@http:Payload user:CreateUserRequest userRequest) returns json|http:BadRequest|http:InternalServerError {
         // Get database

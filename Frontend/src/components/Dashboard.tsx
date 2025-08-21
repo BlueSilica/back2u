@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 
 interface LostItem {
@@ -18,11 +18,56 @@ interface LostItem {
   timeAgo: string
 }
 
+interface RegisteredUser {
+  _id?: string
+  email: string
+  phoneNumber: string
+  address: {
+    number: string
+    address: string
+    postalCode: string
+    city: string
+    country: string
+  }
+  firstName?: string
+  lastName?: string
+  picURL?: string
+  createdAt: string | number[]  // Handle both formats
+  passwordHash?: string  // This shouldn't be in response but handle if present
+}
+
 const Dashboard = () => {
   const { user } = useAuth()
-  const [activeTab, setActiveTab] = useState<'feed' | 'my-items' | 'reports'>('feed')
+  const [activeTab, setActiveTab] = useState<'feed' | 'my-items' | 'reports' | 'users'>('feed')
   const [showReportModal, setShowReportModal] = useState(false)
   const [reportType, setReportType] = useState<'lost' | 'found'>('lost')
+  const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>([])
+  const [loadingUsers, setLoadingUsers] = useState(false)
+
+  // Function to fetch all registered users
+  const fetchUsers = async () => {
+    setLoadingUsers(true)
+    try {
+      const response = await fetch('http://localhost:8080/users')
+      if (response.ok) {
+        const data = await response.json()
+        setRegisteredUsers(data.users || [])
+      } else {
+        console.error('Failed to fetch users:', response.statusText)
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error)
+    } finally {
+      setLoadingUsers(false)
+    }
+  }
+
+  // Fetch users when Users tab is selected
+  useEffect(() => {
+    if (activeTab === 'users') {
+      fetchUsers()
+    }
+  }, [activeTab])
 
   // Dummy data for the feed
   const feedItems: LostItem[] = [
@@ -89,6 +134,18 @@ const Dashboard = () => {
   const myItems = feedItems.filter(item => item.userId === user?.id)
 
   const categories = ['Electronics', 'Personal Items', 'Bags', 'Keys', 'Jewelry', 'Clothing', 'Documents', 'Other']
+
+  // Helper function to format date from API response
+  const formatDate = (dateValue: string | number[]) => {
+    if (Array.isArray(dateValue)) {
+      // Handle Ballerina timestamp format [seconds, nanoseconds]
+      const timestamp = dateValue[0] * 1000; // Convert to milliseconds
+      return new Date(timestamp);
+    } else {
+      // Handle regular date string
+      return new Date(dateValue);
+    }
+  }
 
   const ReportModal = () => (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -331,6 +388,14 @@ const Dashboard = () => {
             📋 My Items ({myItems.length})
           </button>
           <button
+            onClick={() => setActiveTab('users')}
+            className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors ${
+              activeTab === 'users' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-600'
+            }`}
+          >
+            👥 Users ({registeredUsers.length})
+          </button>
+          <button
             onClick={() => setActiveTab('reports')}
             className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors ${
               activeTab === 'reports' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-600'
@@ -432,6 +497,91 @@ const Dashboard = () => {
                 Report Your First Item
               </button>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'users' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-gray-800">Registered Users</h2>
+              <button
+                onClick={fetchUsers}
+                disabled={loadingUsers}
+                className="bg-primary-500 text-white px-4 py-2 rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50"
+              >
+                {loadingUsers ? '🔄 Loading...' : '🔄 Refresh'}
+              </button>
+            </div>
+
+            {loadingUsers ? (
+              <div className="bg-white rounded-xl p-8 text-center">
+                <div className="text-4xl mb-4">⏳</div>
+                <p className="text-gray-600">Loading users...</p>
+              </div>
+            ) : registeredUsers.length === 0 ? (
+              <div className="bg-white rounded-xl p-8 text-center">
+                <div className="text-6xl mb-4">👤</div>
+                <h3 className="text-xl font-semibold text-gray-800 mb-2">No Users Found</h3>
+                <p className="text-gray-600">No registered users available at the moment.</p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl overflow-hidden shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-800">User</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-800">Contact</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-800">Location</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-800">Joined</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {registeredUsers.map((registeredUser) => (
+                        <tr key={registeredUser._id || registeredUser.email} className="hover:bg-gray-50 transition-colors">
+                          <td className="py-4 px-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-r from-primary-500 to-secondary-500 flex items-center justify-center text-white font-semibold">
+                                {registeredUser.firstName && registeredUser.lastName 
+                                  ? `${registeredUser.firstName[0]}${registeredUser.lastName[0]}`.toUpperCase()
+                                  : registeredUser.email[0].toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-semibold text-gray-800">
+                                  {registeredUser.firstName && registeredUser.lastName 
+                                    ? `${registeredUser.firstName} ${registeredUser.lastName}`.trim()
+                                    : registeredUser.firstName || 'Anonymous User'}
+                                </div>
+                                <div className="text-sm text-gray-600">{registeredUser.email}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-4 px-4">
+                            <div className="text-gray-800">{registeredUser.phoneNumber}</div>
+                          </td>
+                          <td className="py-4 px-4">
+                            <div className="text-gray-800">
+                              {registeredUser.address.city}, {registeredUser.address.country}
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              {registeredUser.address.address}
+                            </div>
+                          </td>
+                          <td className="py-4 px-4">
+                            <div className="text-gray-800">
+                              {formatDate(registeredUser.createdAt).toLocaleDateString()}
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              {formatDate(registeredUser.createdAt).toLocaleTimeString()}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

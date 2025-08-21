@@ -56,12 +56,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (response.ok) {
         const data = await response.json()
+        
+        // Handle createdAt field that comes as [timestamp, decimal] array
+        let joinedDate = new Date().toISOString().split('T')[0]
+        if (data.user.createdAt && Array.isArray(data.user.createdAt)) {
+          // Convert Ballerina time array to JavaScript Date
+          const timestamp = data.user.createdAt[0]
+          joinedDate = new Date(timestamp * 1000).toISOString().split('T')[0]
+        }
+        
         const loggedInUser: User = {
           id: data.user._id || Date.now().toString(),
           name: `${data.user.firstName || ''} ${data.user.lastName || ''}`.trim() || 'User',
           email: data.user.email,
           avatar: '👤',
-          joinedDate: data.user.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+          joinedDate: joinedDate,
           itemsReported: 0,
           itemsReturned: 0,
           reputation: 5.0,
@@ -140,13 +149,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log('Signup response:', responseData)
 
       if (response.ok && responseData.user) {
+        // Handle createdAt field that comes as [timestamp, decimal] array
+        let joinedDate = new Date().toISOString().split('T')[0]
+        if (responseData.user.createdAt && Array.isArray(responseData.user.createdAt)) {
+          // Convert Ballerina time array to JavaScript Date
+          const timestamp = responseData.user.createdAt[0]
+          joinedDate = new Date(timestamp * 1000).toISOString().split('T')[0]
+        }
+        
         // User created successfully - use data from backend response
         const newUser: User = {
           id: Date.now().toString(),
           name: name,
           email: responseData.user.email,
           avatar: '🆕',
-          joinedDate: responseData.user.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+          joinedDate: joinedDate,
           itemsReported: 0,
           itemsReturned: 0,
           reputation: 5.0,
