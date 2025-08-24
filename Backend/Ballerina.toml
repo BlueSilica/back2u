@@ -4,5 +4,9 @@ name = "Backend"
 version = "0.1.0"
 distribution = "2201.12.7"
 
+[dependencies]
+"ballerinax/mongodb" = "5.2.1"
+"ballerinai/observe" = "0.0.0"
+
 [build-options]
 observabilityIncluded = true
