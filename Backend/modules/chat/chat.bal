@@ -2,13 +2,35 @@ import ballerina/websocket;
 import ballerina/io;
 import ballerina/uuid;
 import ballerina/time;
+import ballerinax/mongodb;
 
-// Chat room record
+// Chat room record for in-memory storage
 public type ChatRoom record {
     string roomId;
     string[] userIds;
     websocket:Caller[] clients;
     string createdAt;
+};
+
+// Chat room record for database storage
+public type ChatRoomDb record {
+    json _id?; // MongoDB ObjectId can be complex JSON
+    string roomId;
+    string[] userIds;
+    string createdAt;
+    string status; // "active", "inactive"
+};
+
+// Message record for database storage
+public type MessageDb record {
+    json _id?; // MongoDB ObjectId
+    string messageId;
+    string roomId;
+    string senderEmail;
+    string receiverEmail;
+    string message;
+    string timestamp;
+    string status; // "sent", "delivered", "read"
 };
 
 // Store active chat rooms
@@ -17,31 +39,90 @@ ChatRoom[] chatRooms = [];
 // Store user to room mapping
 map<string> userToRoom = {};
 
-// Create or get existing room between two users
-public function createOrGetRoom(string userId1, string userId2) returns string {
-    // Check if room already exists between these users
-    foreach ChatRoom room in chatRooms {
-        if (room.userIds.length() == 2 && 
-            ((room.userIds[0] == userId1 && room.userIds[1] == userId2) ||
-             (room.userIds[0] == userId2 && room.userIds[1] == userId1))) {
-            return room.roomId;
+// Create or get existing room between two users (with database persistence) - using emails
+public function createOrGetRoom(string userEmail1, string userEmail2, mongodb:Database db) returns string|error {
+    // Get chatrooms collection
+    mongodb:Collection chatRoomsCollection = check db->getCollection("chatrooms");
+    
+    // Check if room already exists in database
+    map<json> filter = {
+        "$or": [
+            {
+                "$and": [
+                    {"userIds.0": userEmail1},
+                    {"userIds.1": userEmail2}
+                ]
+            },
+            {
+                "$and": [
+                    {"userIds.0": userEmail2},
+                    {"userIds.1": userEmail1}
+                ]
+            }
+        ],
+        "status": "active"
+    };
+    
+    stream<ChatRoomDb, error?> findResult = check chatRoomsCollection->find(filter);
+    ChatRoomDb[] existingRooms = check from ChatRoomDb room in findResult select room;
+    
+    if existingRooms.length() > 0 {
+        string existingRoomId = existingRooms[0].roomId;
+        
+        // Also check/add to in-memory storage
+        boolean foundInMemory = false;
+        foreach ChatRoom room in chatRooms {
+            if room.roomId == existingRoomId {
+                foundInMemory = true;
+                break;
+            }
         }
+        
+        if !foundInMemory {
+            // Add to in-memory storage
+            ChatRoom memoryRoom = {
+                roomId: existingRoomId,
+                userIds: [userEmail1, userEmail2],
+                clients: [],
+                createdAt: existingRooms[0].createdAt
+            };
+            chatRooms.push(memoryRoom);
+            userToRoom[userEmail1] = existingRoomId;
+            userToRoom[userEmail2] = existingRoomId;
+        }
+        
+        io:println("🔄 Existing chat room retrieved: " + existingRoomId + " for emails: " + userEmail1 + ", " + userEmail2);
+        return existingRoomId;
     }
     
     // Create new room
     string roomId = uuid:createType1AsString();
+    string timestamp = time:utcNow()[0].toString();
+    
+    // Create database record
+    ChatRoomDb dbRoom = {
+        roomId: roomId,
+        userIds: [userEmail1, userEmail2],
+        createdAt: timestamp,
+        status: "active"
+    };
+    
+    // Insert into database
+    check chatRoomsCollection->insertOne(dbRoom);
+    
+    // Create in-memory record
     ChatRoom newRoom = {
         roomId: roomId,
-        userIds: [userId1, userId2],
+        userIds: [userEmail1, userEmail2],
         clients: [],
-        createdAt: time:utcNow()[0].toString()
+        createdAt: timestamp
     };
     
     chatRooms.push(newRoom);
-    userToRoom[userId1] = roomId;
-    userToRoom[userId2] = roomId;
+    userToRoom[userEmail1] = roomId;
+    userToRoom[userEmail2] = roomId;
     
-    io:println("🏠 New chat room created: " + roomId + " for users: " + userId1 + ", " + userId2);
+    io:println("🏠 New chat room created and saved to DB: " + roomId + " for emails: " + userEmail1 + ", " + userEmail2);
     return roomId;
 }
 
@@ -175,7 +256,146 @@ public function getUserRoom(string userId) returns string? {
     return userToRoom[userId];
 }
 
+// Load existing chat rooms from database on startup
+public function loadChatRoomsFromDB(mongodb:Database db) returns error? {
+    mongodb:Collection chatRoomsCollection = check db->getCollection("chatrooms");
+    
+    // Find all active chat rooms
+    map<json> filter = {"status": "active"};
+    stream<ChatRoomDb, error?> findResult = check chatRoomsCollection->find(filter);
+    ChatRoomDb[] dbRooms = check from ChatRoomDb room in findResult select room;
+    
+    foreach ChatRoomDb dbRoom in dbRooms {
+        // Add to in-memory storage
+        ChatRoom memoryRoom = {
+            roomId: dbRoom.roomId,
+            userIds: dbRoom.userIds,
+            clients: [],
+            createdAt: dbRoom.createdAt
+        };
+        
+        chatRooms.push(memoryRoom);
+        
+        // Update user mappings
+        foreach string userId in dbRoom.userIds {
+            userToRoom[userId] = dbRoom.roomId;
+        }
+    }
+    
+    io:println("📚 Loaded " + dbRooms.length().toString() + " chat rooms from database");
+}
+
+// Get all chat rooms from database
+public function getAllChatRoomsFromDB(mongodb:Database db) returns ChatRoomDb[]|error {
+    mongodb:Collection chatRoomsCollection = check db->getCollection("chatrooms");
+    
+    stream<ChatRoomDb, error?> findResult = check chatRoomsCollection->find({});
+    ChatRoomDb[] rooms = check from ChatRoomDb room in findResult select room;
+    
+    return rooms;
+}
+
+// Get chat rooms for a specific user from database - using email
+public function getUserChatRoomsFromDB(mongodb:Database db, string userEmail) returns ChatRoomDb[]|error {
+    mongodb:Collection chatRoomsCollection = check db->getCollection("chatrooms");
+    
+    // Find rooms where the user email is in the userIds array
+    map<json> filter = {
+        "userIds": userEmail,
+        "status": "active"
+    };
+    
+    stream<ChatRoomDb, error?> findResult = check chatRoomsCollection->find(filter);
+    ChatRoomDb[] rooms = check from ChatRoomDb room in findResult select room;
+    
+    return rooms;
+}
+
 // Get number of active rooms
 public function getActiveRoomsCount() returns int {
     return chatRooms.length();
+}
+
+// Save message to database
+public function saveMessageToDB(mongodb:Database db, string roomId, string senderEmail, string receiverEmail, string message) returns string|error {
+    mongodb:Collection messagesCollection = check db->getCollection("messages");
+    
+    string messageId = uuid:createType1AsString();
+    string timestamp = time:utcNow()[0].toString();
+    
+    MessageDb messageRecord = {
+        messageId: messageId,
+        roomId: roomId,
+        senderEmail: senderEmail,
+        receiverEmail: receiverEmail,
+        message: message,
+        timestamp: timestamp,
+        status: "sent"
+    };
+    
+    // Insert into database
+    check messagesCollection->insertOne(messageRecord);
+    
+    io:println("💾 Message saved to DB: " + messageId + " from " + senderEmail + " to " + receiverEmail + " in room " + roomId);
+    return messageId;
+}
+
+// Get messages for a chat room
+public function getMessagesForRoom(mongodb:Database db, string roomId) returns MessageDb[]|error {
+    mongodb:Collection messagesCollection = check db->getCollection("messages");
+    
+    // Find messages for the room, sorted by timestamp (ascending for chronological order)
+    map<json> filter = {"roomId": roomId};
+    
+    stream<MessageDb, error?> findResult = check messagesCollection->find(filter);
+    MessageDb[] messages = check from MessageDb message in findResult select message;
+    
+    return messages;
+}
+
+// Get recent messages between two users
+public function getMessagesBetweenUsers(mongodb:Database db, string userEmail1, string userEmail2) returns MessageDb[]|error {
+    mongodb:Collection messagesCollection = check db->getCollection("messages");
+    
+    // Find messages between two users (in both directions)
+    map<json> filter = {
+        "$or": [
+            {
+                "$and": [
+                    {"senderEmail": userEmail1},
+                    {"receiverEmail": userEmail2}
+                ]
+            },
+            {
+                "$and": [
+                    {"senderEmail": userEmail2},
+                    {"receiverEmail": userEmail1}
+                ]
+            }
+        ]
+    };
+    
+    stream<MessageDb, error?> findResult = check messagesCollection->find(filter);
+    MessageDb[] messages = check from MessageDb message in findResult select message;
+    
+    return messages;
+}
+
+// Get new messages for a room since a specific timestamp (for real-time polling)
+public function getNewMessagesForRoomSince(mongodb:Database db, string roomId, string sinceTimestamp) returns MessageDb[]|error {
+    mongodb:Collection messagesCollection = check db->getCollection("messages");
+    
+    // Find messages for the room that are newer than the given timestamp
+    map<json> filter = {
+        "roomId": roomId,
+        "timestamp": {
+            "$gt": sinceTimestamp
+        }
+    };
+    
+    stream<MessageDb, error?> findResult = check messagesCollection->find(filter);
+    MessageDb[] messages = check from MessageDb message in findResult select message;
+    
+    io:println("🔍 Found " + messages.length().toString() + " new messages for room " + roomId + " since " + sinceTimestamp);
+    return messages;
 }

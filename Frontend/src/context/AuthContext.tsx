@@ -56,6 +56,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (response.ok) {
         const data = await response.json()
+        console.log('🔍 Login response data:', data)
         
         // Handle createdAt field that comes as [timestamp, decimal] array
         let joinedDate = new Date().toISOString().split('T')[0]
@@ -65,8 +66,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           joinedDate = new Date(timestamp * 1000).toISOString().split('T')[0]
         }
         
+        console.log('👤 Using user ID from backend:', data.user._id || data.user.id)
+        
         const loggedInUser: User = {
-          id: data.user._id || Date.now().toString(),
+          id: data.user._id || data.user.id || Date.now().toString(),
           name: `${data.user.firstName || ''} ${data.user.lastName || ''}`.trim() || 'User',
           email: data.user.email,
           avatar: '👤',
@@ -159,7 +162,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         
         // User created successfully - use data from backend response
         const newUser: User = {
-          id: Date.now().toString(),
+          id: responseData.user._id || responseData.user.id || Date.now().toString(),
           name: name,
           email: responseData.user.email,
           avatar: '🆕',
