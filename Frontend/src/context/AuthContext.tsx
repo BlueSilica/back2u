@@ -1,97 +1,107 @@
-import { createContext, useContext, useState } from 'react'
-import type { ReactNode } from 'react'
+import { createContext, useContext, useState } from "react";
+import type { ReactNode } from "react";
 
 interface User {
-  id: string
-  name: string
-  email: string
-  avatar: string
-  joinedDate: string
-  itemsReported: number
-  itemsReturned: number
-  reputation: number
+  id: string;
+  name: string;
+  email: string;
+  avatar: string;
+  joinedDate: string;
+  itemsReported: number;
+  itemsReturned: number;
+  reputation: number;
+  role: "admin" | "user" | "moderator";
   // ...added optional contact fields
-  phoneNumber?: string
+  phoneNumber?: string;
   address?: {
-    number: string
-    address: string
-    postalCode: string
-    city: string
-    country: string
-  }
+    number: string;
+    address: string;
+    postalCode: string;
+    city: string;
+    country: string;
+  };
 }
 
 interface AuthContextType {
-  user: User | null
-  login: (email: string, password: string) => Promise<boolean>
+  user: User | null;
+  login: (email: string, password: string) => Promise<boolean>;
   // extended signup signature to accept phoneNumber and address
   signup: (
     name: string,
     email: string,
     password: string,
     phoneNumber?: string,
-    address?: { number: string; address: string; postalCode: string; city: string; country: string }
-  ) => Promise<boolean>
-  logout: () => void
-  isLoading: boolean
+    address?: {
+      number: string;
+      address: string;
+      postalCode: string;
+      city: string;
+      country: string;
+    }
+  ) => Promise<boolean>;
+  logout: () => void;
+  isLoading: boolean;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    setIsLoading(true)
-    
+    setIsLoading(true);
+
     try {
-      const response = await fetch('http://localhost:8080/auth/login', {
-        method: 'POST',
+      const response = await fetch("http://localhost:8080/auth/login", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ email, password }),
-      })
+      });
 
       if (response.ok) {
-        const data = await response.json()
-        
+        const data = await response.json();
+
         // Handle createdAt field that comes as [timestamp, decimal] array
-        let joinedDate = new Date().toISOString().split('T')[0]
+        let joinedDate = new Date().toISOString().split("T")[0];
         if (data.user.createdAt && Array.isArray(data.user.createdAt)) {
           // Convert Ballerina time array to JavaScript Date
-          const timestamp = data.user.createdAt[0]
-          joinedDate = new Date(timestamp * 1000).toISOString().split('T')[0]
+          const timestamp = data.user.createdAt[0];
+          joinedDate = new Date(timestamp * 1000).toISOString().split("T")[0];
         }
-        
+
         const loggedInUser: User = {
           id: data.user._id || Date.now().toString(),
-          name: `${data.user.firstName || ''} ${data.user.lastName || ''}`.trim() || 'User',
+          name:
+            `${data.user.firstName || ""} ${data.user.lastName || ""}`.trim() ||
+            "User",
           email: data.user.email,
-          avatar: '👤',
+          avatar: "👤",
           joinedDate: joinedDate,
           itemsReported: 0,
           itemsReturned: 0,
           reputation: 5.0,
+          role: data.user.role || "user", // Default to 'admin' if role not provided
           phoneNumber: data.user.phoneNumber,
-          address: data.user.address
-        }
-        
-        setUser(loggedInUser)
-        localStorage.setItem('user', JSON.stringify(loggedInUser))
-        setIsLoading(false)
-        return true
+          address: data.user.address,
+        };
+
+        setUser(loggedInUser);
+        localStorage.setItem("user", JSON.stringify(loggedInUser));
+        setIsLoading(false);
+        return true;
       } else {
-        setIsLoading(false)
-        return false
+        setIsLoading(false);
+        return false;
       }
     } catch (error) {
-      console.error('Login error:', error)
-      setIsLoading(false)
-      return false
+      console.error("Login error:", error);
+      setIsLoading(false);
+      return false;
     }
-  }
+  };
 
   // Updated signup to call backend API
   const signup = async (
@@ -99,118 +109,128 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     email: string,
     password: string,
     phoneNumber?: string,
-    address?: { number: string; address: string; postalCode: string; city: string; country: string }
+    address?: {
+      number: string;
+      address: string;
+      postalCode: string;
+      city: string;
+      country: string;
+    }
   ): Promise<boolean> => {
-    setIsLoading(true)
-    
+    setIsLoading(true);
+
     try {
       // Split name into firstName and lastName
-      const nameParts = name.trim().split(' ')
-      const firstName = nameParts[0] || ''
-      const lastName = nameParts.slice(1).join(' ') || ''
+      const nameParts = name.trim().split(" ");
+      const firstName = nameParts[0] || "";
+      const lastName = nameParts.slice(1).join(" ") || "";
 
-      console.log('Signup payload:', {
+      console.log("Signup payload:", {
         email,
-        phoneNumber: phoneNumber || '',
+        phoneNumber: phoneNumber || "",
         address: address || {
-          number: '',
-          address: '',
-          postalCode: '',
-          city: '',
-          country: ''
+          number: "",
+          address: "",
+          postalCode: "",
+          city: "",
+          country: "",
         },
         password,
         firstName,
-        lastName
-      })
+        lastName,
+      });
 
-      const response = await fetch('http://localhost:8080/users', {
-        method: 'POST',
+      const response = await fetch("http://localhost:8080/users", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           email,
-          phoneNumber: phoneNumber || '',
+          phoneNumber: phoneNumber || "",
           address: address || {
-            number: '',
-            address: '',
-            postalCode: '',
-            city: '',
-            country: ''
+            number: "",
+            address: "",
+            postalCode: "",
+            city: "",
+            country: "",
           },
           password,
           firstName,
-          lastName
+          lastName,
         }),
-      })
+      });
 
-      const responseData = await response.json()
-      console.log('Signup response:', responseData)
+      const responseData = await response.json();
+      console.log("Signup response:", responseData);
 
       if (response.ok && responseData.user) {
         // Handle createdAt field that comes as [timestamp, decimal] array
-        let joinedDate = new Date().toISOString().split('T')[0]
-        if (responseData.user.createdAt && Array.isArray(responseData.user.createdAt)) {
+        let joinedDate = new Date().toISOString().split("T")[0];
+        if (
+          responseData.user.createdAt &&
+          Array.isArray(responseData.user.createdAt)
+        ) {
           // Convert Ballerina time array to JavaScript Date
-          const timestamp = responseData.user.createdAt[0]
-          joinedDate = new Date(timestamp * 1000).toISOString().split('T')[0]
+          const timestamp = responseData.user.createdAt[0];
+          joinedDate = new Date(timestamp * 1000).toISOString().split("T")[0];
         }
-        
+
         // User created successfully - use data from backend response
         const newUser: User = {
           id: Date.now().toString(),
           name: name,
           email: responseData.user.email,
-          avatar: '🆕',
+          avatar: "🆕",
           joinedDate: joinedDate,
           itemsReported: 0,
           itemsReturned: 0,
           reputation: 5.0,
+          role: responseData.user.role || "user", // Default to 'user' if role not provided
           phoneNumber: responseData.user.phoneNumber,
-          address: responseData.user.address
-        }
-        
-        setUser(newUser)
-        localStorage.setItem('user', JSON.stringify(newUser))
-        setIsLoading(false)
-        return true
+          address: responseData.user.address,
+        };
+
+        setUser(newUser);
+        localStorage.setItem("user", JSON.stringify(newUser));
+        setIsLoading(false);
+        return true;
       } else {
-        console.error('Signup failed:', responseData)
-        setIsLoading(false)
-        return false
+        console.error("Signup failed:", responseData);
+        setIsLoading(false);
+        return false;
       }
     } catch (error) {
-      console.error('Signup error:', error)
-      setIsLoading(false)
-      return false
+      console.error("Signup error:", error);
+      setIsLoading(false);
+      return false;
     }
-  }
+  };
 
   const logout = () => {
-    setUser(null)
-    localStorage.removeItem('user')
-  }
+    setUser(null);
+    localStorage.removeItem("user");
+  };
 
   // Check if user is already logged in
   useState(() => {
-    const savedUser = localStorage.getItem('user')
+    const savedUser = localStorage.getItem("user");
     if (savedUser) {
-      setUser(JSON.parse(savedUser))
+      setUser(JSON.parse(savedUser));
     }
-  })
+  });
 
   return (
     <AuthContext.Provider value={{ user, login, signup, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
-  )
-}
+  );
+};
 
 export const useAuth = () => {
-  const context = useContext(AuthContext)
+  const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
+    throw new Error("useAuth must be used within an AuthProvider");
   }
-  return context
-}
+  return context;
+};

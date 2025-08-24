@@ -12,6 +12,7 @@ import {
 } from "react-icons/fa";
 import { useAuth } from "../context/AuthContext";
 import AuthModal from "./AuthModal";
+import ThemeToggle from "./ui/ThemeToggle";
 
 interface HeaderProps {
   currentView?: "home" | "dashboard" | "chat" | "found-items";
@@ -158,8 +159,11 @@ const Header = ({ currentView = "home", onNavigate }: HeaderProps) => {
                 </li>
               </ul>
 
+              {/* Theme Toggle */}
+              <ThemeToggle size="md" className="ml-2" />
+
               {/* User Menu */}
-              <div className="ml-6">
+              <div className="ml-4">
                 {user ? (
                   <div className="relative" ref={dropdownRef}>
                     <button
@@ -310,6 +314,9 @@ const Header = ({ currentView = "home", onNavigate }: HeaderProps) => {
 
             {/* Mobile menu button */}
             <div className="flex md:hidden items-center gap-3">
+              {/* Theme Toggle for Mobile */}
+              <ThemeToggle size="sm" />
+
               {user && (
                 <div className="relative" ref={dropdownRef}>
                   <button

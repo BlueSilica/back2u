@@ -1,0 +1,240 @@
+import type {
+  AdminUser,
+  AdminItem,
+  AdminReport,
+  DashboardStats,
+} from "../types/admin";
+
+// Mock Users Data
+export const mockUsers: AdminUser[] = [
+  {
+    id: "1",
+    name: "John Smith",
+    email: "john.smith@email.com",
+    role: "admin",
+    status: "active",
+    joinedDate: "2024-01-15",
+    lastActive: "2025-08-24",
+    itemsReported: 12,
+    itemsReturned: 8,
+    reputation: 4.8,
+    avatar: "👨‍💼",
+  },
+  {
+    id: "2",
+    name: "Sarah Johnson",
+    email: "sarah.j@email.com",
+    role: "user",
+    status: "active",
+    joinedDate: "2024-03-22",
+    lastActive: "2025-08-23",
+    itemsReported: 5,
+    itemsReturned: 3,
+    reputation: 4.2,
+    avatar: "👩‍🦰",
+  },
+  {
+    id: "3",
+    name: "Michael Chen",
+    email: "mchen@email.com",
+    role: "moderator",
+    status: "active",
+    joinedDate: "2024-02-10",
+    lastActive: "2025-08-24",
+    itemsReported: 15,
+    itemsReturned: 12,
+    reputation: 4.9,
+    avatar: "👨‍💻",
+  },
+  {
+    id: "4",
+    name: "Emily Davis",
+    email: "emily.davis@email.com",
+    role: "user",
+    status: "suspended",
+    joinedDate: "2024-05-08",
+    lastActive: "2025-08-20",
+    itemsReported: 3,
+    itemsReturned: 0,
+    reputation: 2.1,
+    avatar: "👩‍🎨",
+  },
+  {
+    id: "5",
+    name: "Alex Thompson",
+    email: "alex.t@email.com",
+    role: "user",
+    status: "pending",
+    joinedDate: "2025-08-24",
+    lastActive: "2025-08-24",
+    itemsReported: 1,
+    itemsReturned: 0,
+    reputation: 5.0,
+    avatar: "👨‍🎓",
+  },
+];
+
+// Mock Items Data
+export const mockItems: AdminItem[] = [
+  {
+    id: "1",
+    title: "Black Leather Wallet",
+    description:
+      "Lost black leather wallet with credit cards and driver's license",
+    category: "Personal Items",
+    status: "lost",
+    datePosted: "2025-08-22",
+    location: "Downtown Mall, Food Court",
+    images: ["/api/placeholder/300/200"],
+    reportedBy: "john.smith@email.com",
+    contactInfo: "+1-555-0123",
+  },
+  {
+    id: "2",
+    title: "iPhone 15 Pro",
+    description: "Found silver iPhone 15 Pro in case, locked with Face ID",
+    category: "Electronics",
+    status: "found",
+    datePosted: "2025-08-23",
+    location: "Central Park, Near Fountain",
+    images: ["/api/placeholder/300/200"],
+    reportedBy: "sarah.j@email.com",
+  },
+  {
+    id: "3",
+    title: "Blue Bicycle Helmet",
+    description: "Child's blue bicycle helmet with stickers",
+    category: "Sports Equipment",
+    status: "matched",
+    datePosted: "2025-08-20",
+    location: "Riverside Park, Bike Path",
+    images: ["/api/placeholder/300/200"],
+    reportedBy: "mchen@email.com",
+  },
+  {
+    id: "4",
+    title: "Diamond Ring",
+    description: "White gold engagement ring with diamond",
+    category: "Jewelry",
+    status: "pending",
+    datePosted: "2025-08-24",
+    location: "University Campus, Library",
+    images: ["/api/placeholder/300/200"],
+    reportedBy: "emily.davis@email.com",
+  },
+];
+
+// Mock Reports Data
+export const mockReports: AdminReport[] = [
+  {
+    id: "1",
+    reportId: "RPT-001",
+    reporter: {
+      id: "2",
+      name: "Sarah Johnson",
+      email: "sarah.j@email.com",
+    },
+    reportedUser: {
+      id: "4",
+      name: "Emily Davis",
+      email: "emily.davis@email.com",
+    },
+    reason: "Inappropriate Behavior",
+    description: "User was rude and uncooperative during item exchange",
+    status: "open",
+    createdAt: "2025-08-23T10:30:00Z",
+  },
+  {
+    id: "2",
+    reportId: "RPT-002",
+    reporter: {
+      id: "1",
+      name: "John Smith",
+      email: "john.smith@email.com",
+    },
+    reportedItem: {
+      id: "4",
+      title: "Diamond Ring",
+    },
+    reason: "Fake Item",
+    description: "This item appears to be fake based on the photos provided",
+    status: "reviewed",
+    createdAt: "2025-08-22T14:15:00Z",
+  },
+  {
+    id: "3",
+    reportId: "RPT-003",
+    reporter: {
+      id: "3",
+      name: "Michael Chen",
+      email: "mchen@email.com",
+    },
+    reportedUser: {
+      id: "5",
+      name: "Alex Thompson",
+      email: "alex.t@email.com",
+    },
+    reason: "Spam",
+    description: "User posted multiple duplicate items",
+    status: "resolved",
+    createdAt: "2025-08-21T09:45:00Z",
+    resolvedAt: "2025-08-22T11:30:00Z",
+  },
+];
+
+// Mock Dashboard Stats
+export const mockDashboardStats: DashboardStats = {
+  totalItems: 156,
+  totalUsers: 1234,
+  totalMatches: 89,
+  pendingReports: 3,
+  recentActivity: [
+    {
+      id: "1",
+      type: "item_posted",
+      description: "New item posted: Diamond Ring",
+      timestamp: "2025-08-24T08:30:00Z",
+      user: "Emily Davis",
+    },
+    {
+      id: "2",
+      type: "item_matched",
+      description: "Item matched: Blue Bicycle Helmet",
+      timestamp: "2025-08-24T07:15:00Z",
+      user: "Michael Chen",
+    },
+    {
+      id: "3",
+      type: "user_joined",
+      description: "New user registered",
+      timestamp: "2025-08-24T06:45:00Z",
+      user: "Alex Thompson",
+    },
+    {
+      id: "4",
+      type: "report_filed",
+      description: "New report filed: Inappropriate Behavior",
+      timestamp: "2025-08-23T10:30:00Z",
+      user: "Sarah Johnson",
+    },
+    {
+      id: "5",
+      type: "item_posted",
+      description: "New item posted: iPhone 15 Pro",
+      timestamp: "2025-08-23T09:20:00Z",
+      user: "Sarah Johnson",
+    },
+  ],
+};
+
+// Chart data for dashboard
+export const mockChartData = [
+  { month: "Jan", lost: 45, found: 38, matched: 22 },
+  { month: "Feb", lost: 52, found: 41, matched: 28 },
+  { month: "Mar", lost: 48, found: 45, matched: 31 },
+  { month: "Apr", lost: 61, found: 52, matched: 35 },
+  { month: "May", lost: 55, found: 48, matched: 29 },
+  { month: "Jun", lost: 67, found: 59, matched: 42 },
+  { month: "Jul", lost: 72, found: 65, matched: 48 },
+  { month: "Aug", lost: 59, found: 54, matched: 36 },
+];
