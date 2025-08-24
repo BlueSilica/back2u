@@ -1,6 +1,7 @@
 import ballerina/crypto;
 import ballerina/time;
 import ballerina/http;
+import ballerina/io;
 import ballerinax/mongodb;
 
 // User address record
@@ -196,10 +197,50 @@ public function handleGetAllUsers(mongodb:Database db) returns json|http:Interna
 }
 
 // Get user by email function (return JSON)
-public function getUserByEmailAsJson(mongodb:Database db, string email) returns record {}|error? {
+// Get user by email (internal function)
+function getUserByEmailAsJson(mongodb:Database db, string email) returns record {}|error? {
     mongodb:Collection usersCollection = check db->getCollection("users");
     record {}? result = check usersCollection->findOne({email: email});
+    
+    if result is record {} {
+        io:println("📝 Raw MongoDB record keys: " + result.keys().toString());
+        // Check if _id exists in the record
+        if result.hasKey("_id") {
+            io:println("✅ _id field found in MongoDB record");
+        } else {
+            io:println("❌ _id field NOT found in MongoDB record");
+        }
+    }
+    
     return result;
+}
+
+// Get user by ID
+public function getUserById(mongodb:Database db, string userId) returns json|error {
+    mongodb:Collection usersCollection = check db->getCollection("users");
+    
+    // Create ObjectId filter for MongoDB
+    map<json> filter = {"_id": {"$oid": userId}};
+    
+    record {}? result = check usersCollection->findOne(filter);
+    if result is () {
+        return error("User not found with ID: " + userId);
+    }
+    
+    // Convert to JSON and return (password hash handling will be done at API level)
+    return result.toJson();
+}
+
+// Get user by email (for chat partner lookup)
+public function getUserByEmailForChat(mongodb:Database db, string email) returns json|error {
+    mongodb:Collection usersCollection = check db->getCollection("users");
+    record {}? result = check usersCollection->findOne({email: email});
+    if result is () {
+        return error("User not found with email: " + email);
+    }
+    
+    // Convert to JSON and return (password hash handling will be done at API level)
+    return result.toJson();
 }
 
 // Handle user login
@@ -216,7 +257,15 @@ public function handleUserLogin(mongodb:Database db, LoginRequest loginRequest) 
     }
     
     record {} user = <record {}>userResult;
+    
+    // Try to get _id from the record before converting to JSON
+    anydata|error idValue = user["_id"];
+    io:println("🔍 _id value from record: " + (idValue is error ? "ERROR" : idValue.toString()));
+    
     json userJson = user.toJson();
+    
+    // Debug: Print what we got from MongoDB
+    io:println("🔍 Raw user from MongoDB: " + userJson.toString());
     
     // Get password hash from user JSON
     json|error passwordHashResult = userJson.passwordHash;
@@ -236,10 +285,25 @@ public function handleUserLogin(mongodb:Database db, LoginRequest loginRequest) 
         return <http:BadRequest>{body: errorResponse};
     }
     
-    // Return success response (remove password hash)
+    // Return success response - create a new JSON object without password hash
+    map<json> userMap = <map<json>>userJson;
+    
+    // Create response user object excluding password hash
+    map<json> responseUserMap = {};
+    
+    // Copy all fields except passwordHash
+    foreach var [key, value] in userMap.entries() {
+        if key != "passwordHash" {
+            responseUserMap[key] = value;
+            io:println("📝 Copying field: " + key + " = " + value.toString());
+        }
+    }
+    
+    io:println("🎯 Final response user keys: " + responseUserMap.keys().toString());
+    
     json response = {
         "message": "Login successful",
-        "user": userJson
+        "user": responseUserMap
     };
     
     return response;
