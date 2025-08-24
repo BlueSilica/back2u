@@ -25,6 +25,7 @@ dependencies = [
 modules = [
 	{org = "adeep", packageName = "Backend", moduleName = "Backend"},
 	{org = "adeep", packageName = "Backend", moduleName = "Backend.chat"},
+	{org = "adeep", packageName = "Backend", moduleName = "Backend.lostitem"},
 	{org = "adeep", packageName = "Backend", moduleName = "Backend.user"}
 ]
 
@@ -94,7 +95,7 @@ dependencies = [
 [[package]]
 org = "ballerina"
 name = "http"
-version = "2.14.3"
+version = "2.14.4"
 dependencies = [
 	{org = "ballerina", name = "auth"},
 	{org = "ballerina", name = "cache"},
