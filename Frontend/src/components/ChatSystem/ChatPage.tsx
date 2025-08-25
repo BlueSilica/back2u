@@ -17,6 +17,10 @@ interface Message {
   message: string
   timestamp: string
   status: string
+  fileUrl?: string
+  fileName?: string
+  fileSize?: number
+  contentType?: string
 }
 
 export default function ChatPage() {
@@ -31,8 +35,11 @@ export default function ChatPage() {
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [lastMessageTimestamp, setLastMessageTimestamp] = useState<string>('0')
   const [isPolling, setIsPolling] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pollingIntervalRef = useRef<number | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Fetch chat partners for the current user
   useEffect(() => {
@@ -252,6 +259,110 @@ export default function ChatPage() {
     }
   }
 
+  // Handle file selection
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      console.log('📎 File selected:', file.name, 'Size:', file.size)
+      setSelectedFile(file)
+      
+      // Automatically upload and send the file
+      uploadAndSendFile(file)
+    }
+  }
+
+  // Upload and send file function
+  const uploadAndSendFile = async (file: File) => {
+    if (!selectedPartner || !user?.email) return
+
+    setIsUploading(true)
+    console.log('📤 Uploading file:', file.name)
+
+    try {
+      // First, upload the file
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('uploadedBy', user.email)
+      formData.append('category', 'chat')
+
+      const uploadResponse = await fetch('http://localhost:8080/files', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload file')
+      }
+
+      const uploadData = await uploadResponse.json()
+      console.log('✅ File uploaded successfully:', uploadData)
+
+      if (uploadData.status === 'success') {
+        // Now send a message with the file info
+        const fileMessage = `📎 ${file.name}`
+        
+        const messageResponse = await fetch('http://localhost:8080/chat/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            roomId: selectedPartner.roomId,
+            senderEmail: user.email,
+            receiverEmail: selectedPartner.partnerEmail,
+            message: fileMessage,
+            fileUrl: uploadData.fileUrl,
+            fileName: file.name,
+            fileSize: file.size,
+            contentType: file.type
+          })
+        })
+
+        if (!messageResponse.ok) {
+          throw new Error('Failed to send file message')
+        }
+
+        const messageData = await messageResponse.json()
+        console.log('✅ File message sent successfully:', messageData)
+
+        if (messageData.status === 'success') {
+          // Add the file message to local state
+          const timestamp = Date.now().toString()
+          const newMessage: Message = {
+            messageId: messageData.messageId,
+            roomId: selectedPartner.roomId,
+            senderEmail: user.email,
+            receiverEmail: selectedPartner.partnerEmail,
+            message: fileMessage,
+            timestamp: timestamp,
+            status: 'sent',
+            fileUrl: uploadData.fileUrl,
+            fileName: file.name,
+            fileSize: file.size,
+            contentType: file.type
+          }
+          setMessages(prev => [...prev, newMessage])
+          setLastMessageTimestamp(timestamp)
+        }
+      }
+    } catch (err) {
+      console.error('💥 Error uploading/sending file:', err)
+      // You could show an error message to the user here
+    } finally {
+      setIsUploading(false)
+      setSelectedFile(null)
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  // Handle file attach button click
+  const handleAttachClick = () => {
+    fileInputRef.current?.click()
+  }
+
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
@@ -330,6 +441,7 @@ export default function ChatPage() {
                     const isCurrentUser = m.senderEmail === user?.email
                     const senderName = isCurrentUser ? 'You' : selectedPartner.partnerName
                     const timestamp = new Date(parseInt(m.timestamp) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    const isFileMessage = m.fileUrl && m.fileName
                     
                     return (
                       <div key={m.messageId} className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'}`}>
@@ -337,7 +449,54 @@ export default function ChatPage() {
                           <div className={`text-xs mb-1 ${isCurrentUser ? 'text-purple-200' : 'text-gray-500'}`}>
                             {senderName} • {timestamp}
                           </div>
-                          <div>{m.message}</div>
+                          
+                          {isFileMessage ? (
+                            <div className="space-y-2">
+                              <div>{m.message}</div>
+                              <div className={`border rounded-lg p-3 ${isCurrentUser ? 'border-purple-300 bg-purple-400/20' : 'border-gray-200 bg-gray-50'}`}>
+                                <div className="flex items-center gap-3">
+                                  <div className="text-2xl">
+                                    {m.contentType?.startsWith('image/') ? '🖼️' : 
+                                     m.contentType?.startsWith('video/') ? '🎥' : 
+                                     m.contentType?.startsWith('audio/') ? '🎵' : 
+                                     m.contentType?.includes('pdf') ? '📄' : '📎'}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-medium truncate">{m.fileName}</div>
+                                    <div className={`text-xs ${isCurrentUser ? 'text-purple-200' : 'text-gray-500'}`}>
+                                      {m.fileSize ? `${(m.fileSize / 1024).toFixed(1)} KB` : 'Unknown size'}
+                                    </div>
+                                  </div>
+                                  <a
+                                    href={m.fileUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={`px-3 py-1 text-xs rounded ${
+                                      isCurrentUser 
+                                        ? 'bg-white text-purple-600 hover:bg-purple-50' 
+                                        : 'bg-purple-600 text-white hover:bg-purple-700'
+                                    } transition-colors`}
+                                  >
+                                    Download
+                                  </a>
+                                </div>
+                                
+                                {/* Preview for images */}
+                                {m.contentType?.startsWith('image/') && (
+                                  <div className="mt-2">
+                                    <img 
+                                      src={m.fileUrl} 
+                                      alt={m.fileName} 
+                                      className="max-w-full max-h-48 rounded object-cover cursor-pointer"
+                                      onClick={() => window.open(m.fileUrl, '_blank')}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div>{m.message}</div>
+                          )}
                         </div>
                       </div>
                     )
@@ -348,23 +507,56 @@ export default function ChatPage() {
 
               <footer className="p-4 border-t bg-white flex-shrink-0">
                 <div className="flex gap-2 w-full">
+                  {/* Hidden file input */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip,.rar"
+                  />
+                  
+                  {/* File attach button */}
+                  <button
+                    type="button"
+                    onClick={handleAttachClick}
+                    disabled={isUploading}
+                    className="px-3 py-3 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg border border-gray-300 hover:border-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    title="Attach file"
+                  >
+                    {isUploading ? (
+                      <div className="animate-spin w-5 h-5">⏳</div>
+                    ) : (
+                      <div className="w-5 h-5">📎</div>
+                    )}
+                  </button>
+                  
                   <input 
                     value={input} 
                     onChange={e => setInput(e.target.value)} 
                     onKeyPress={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                    className="flex-1 px-4 py-3 border rounded-lg" 
-                    placeholder={`Message ${selectedPartner.partnerName}...`} 
+                    disabled={isUploading}
+                    className="flex-1 px-4 py-3 border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed" 
+                    placeholder={isUploading ? 'Uploading file...' : `Message ${selectedPartner.partnerName}...`} 
                   />
                   <button
                     type="button"
                     aria-label="Send message"
                     onClick={sendMessage}
-                    disabled={!input.trim()}
+                    disabled={!input.trim() || isUploading}
                     className="px-5 py-3 bg-purple-600 text-white rounded-lg shadow-lg hover:bg-purple-700 border border-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-300 dark:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Send
+                    {isUploading ? 'Uploading...' : 'Send'}
                   </button>
                 </div>
+                
+                {/* Upload progress indicator */}
+                {isUploading && (
+                  <div className="mt-2 text-sm text-gray-500 flex items-center gap-2">
+                    <div className="animate-spin w-4 h-4">⏳</div>
+                    Uploading {selectedFile?.name}...
+                  </div>
+                )}
               </footer>
             </>
           ) : (

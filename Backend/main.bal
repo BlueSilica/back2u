@@ -1032,4 +1032,154 @@ service / on new http:Listener(8080) {
         };
     }
 
+    // Chat file upload endpoint
+    resource function post chat/files(http:Request request) returns json|http:BadRequest|http:InternalServerError|error {
+        io:println("📁 Processing chat file upload request");
+        
+        // Check content type
+        string|error contentType = request.getContentType();
+        if contentType is error || !contentType.startsWith("multipart/form-data") {
+            return http:BAD_REQUEST;
+        }
+        
+        // Parse multipart request
+        mime:Entity[]|error bodyParts = request.getBodyParts();
+        if bodyParts is error {
+            io:println("❌ Error parsing multipart request: " + bodyParts.message());
+            return http:BAD_REQUEST;
+        }
+        
+        string roomId = "";
+        string senderEmail = "";
+        string receiverEmail = "";
+        string message = "";
+        byte[] fileContent = [];
+        string fileName = "";
+        string fileType = "";
+        
+        // Parse form data
+        foreach mime:Entity part in bodyParts {
+            mime:ContentDisposition contentDisposition = part.getContentDisposition();
+            string fieldName = contentDisposition.name is string ? contentDisposition.name : "";
+            
+            if fieldName == "roomId" {
+                byte[]|error fieldValue = part.getByteArray();
+                if fieldValue is byte[] {
+                    roomId = check string:fromBytes(fieldValue);
+                }
+            } else if fieldName == "senderEmail" {
+                byte[]|error fieldValue = part.getByteArray();
+                if fieldValue is byte[] {
+                    senderEmail = check string:fromBytes(fieldValue);
+                }
+            } else if fieldName == "receiverEmail" {
+                byte[]|error fieldValue = part.getByteArray();
+                if fieldValue is byte[] {
+                    receiverEmail = check string:fromBytes(fieldValue);
+                }
+            } else if fieldName == "message" {
+                byte[]|error fieldValue = part.getByteArray();
+                if fieldValue is byte[] {
+                    message = check string:fromBytes(fieldValue);
+                }
+            } else if fieldName == "file" {
+                byte[]|error fieldValue = part.getByteArray();
+                if fieldValue is byte[] {
+                    fileContent = fieldValue;
+                    fileName = contentDisposition.fileName is string ? contentDisposition.fileName : "unknown_file";
+                    string? partContentType = part.getContentType();
+                    fileType = partContentType is string ? partContentType : "application/octet-stream";
+                }
+            }
+        }
+        
+        // Validate required fields
+        if roomId == "" || senderEmail == "" || receiverEmail == "" {
+            return {
+                "status": "error",
+                "message": "Missing required fields: roomId, senderEmail, receiverEmail"
+            };
+        }
+        
+        if fileContent.length() == 0 {
+            return {
+                "status": "error",
+                "message": "No file content provided"
+            };
+        }
+        
+        // Validate file type
+        if !file:isValidFileType(fileName) {
+            return {
+                "status": "error",
+                "message": "Unsupported file type: " + fileName
+            };
+        }
+        
+        // Upload file using existing file module
+        file:UploadResponse|error uploadResult = file:uploadFile(fileContent, fileName, fileType, senderEmail);
+        if uploadResult is error {
+            io:println("❌ File upload failed: " + uploadResult.message());
+            return {
+                "status": "error",
+                "message": "File upload failed: " + uploadResult.message()
+            };
+        }
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Save file message to database
+        string fileMessage = message != "" ? message : "📎 " + fileName;
+        string|error messageId = chat:saveFileMessageToDB(
+            btuDb,
+            roomId,
+            senderEmail,
+            receiverEmail,
+            fileMessage,
+            uploadResult.fileUrl,
+            fileName,
+            uploadResult.metadata.fileSize.toString(),
+            fileType
+        );
+        
+        if messageId is error {
+            io:println("❌ Failed to save file message to DB: " + messageId.message());
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        
+        // Save file metadata to files collection
+        mongodb:Collection filesCollection = check btuDb->getCollection("files");
+        map<json> fileRecord = {
+            "fileId": uploadResult.fileId,
+            "originalFileName": fileName,
+            "fileUrl": uploadResult.fileUrl,
+            "contentType": fileType,
+            "fileSize": uploadResult.metadata.fileSize,
+            "uploadedBy": senderEmail,
+            "uploadTimestamp": uploadResult.metadata.uploadTimestamp,
+            "bucketName": uploadResult.metadata.bucketName,
+            "s3Key": uploadResult.metadata.s3Key,
+            "status": "active",
+            "relatedMessageId": messageId,
+            "chatRoomId": roomId
+        };
+        
+        check filesCollection->insertOne(fileRecord);
+        
+        return {
+            "status": "success",
+            "message": "File uploaded and message sent successfully",
+            "messageId": messageId,
+            "fileId": uploadResult.fileId,
+            "fileUrl": uploadResult.fileUrl,
+            "fileName": fileName,
+            "fileSize": uploadResult.metadata.fileSize
+        };
+    }
+
 }
