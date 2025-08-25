@@ -31,6 +31,11 @@ public type MessageDb record {
     string message;
     string timestamp;
     string status; // "sent", "delivered", "read"
+    string messageType?; // "text", "file", "image"
+    string fileUrl?; // URL of uploaded file (if messageType is "file" or "image")
+    string fileName?; // Original file name
+    string fileSize?; // File size in bytes
+    string contentType?; // MIME type of the file
 };
 
 // Store active chat rooms
@@ -330,13 +335,49 @@ public function saveMessageToDB(mongodb:Database db, string roomId, string sende
         receiverEmail: receiverEmail,
         message: message,
         timestamp: timestamp,
-        status: "sent"
+        status: "sent",
+        messageType: "text"
     };
     
     // Insert into database
     check messagesCollection->insertOne(messageRecord);
     
     io:println("💾 Message saved to DB: " + messageId + " from " + senderEmail + " to " + receiverEmail + " in room " + roomId);
+    return messageId;
+}
+
+// Save file message to database
+public function saveFileMessageToDB(mongodb:Database db, string roomId, string senderEmail, string receiverEmail, string message, string fileUrl, string fileName, string fileSize, string contentType) returns string|error {
+    mongodb:Collection messagesCollection = check db->getCollection("messages");
+    
+    string messageId = uuid:createType1AsString();
+    string timestamp = time:utcNow()[0].toString();
+    
+    // Determine message type based on content type
+    string messageType = "file";
+    if contentType.startsWith("image/") {
+        messageType = "image";
+    }
+    
+    MessageDb messageRecord = {
+        messageId: messageId,
+        roomId: roomId,
+        senderEmail: senderEmail,
+        receiverEmail: receiverEmail,
+        message: message,
+        timestamp: timestamp,
+        status: "sent",
+        messageType: messageType,
+        fileUrl: fileUrl,
+        fileName: fileName,
+        fileSize: fileSize,
+        contentType: contentType
+    };
+    
+    // Insert into database
+    check messagesCollection->insertOne(messageRecord);
+    
+    io:println("📎 File message saved to DB: " + messageId + " (" + fileName + ") from " + senderEmail + " to " + receiverEmail + " in room " + roomId);
     return messageId;
 }
 
