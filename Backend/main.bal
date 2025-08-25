@@ -1,8 +1,11 @@
 import ballerina/http;
 import ballerina/io;
+import ballerina/mime;
 import ballerinax/mongodb;
 import Backend.user;
 import Backend.chat;
+import Backend.lostitem;
+import Backend.file;
 
 // CORS configuration
 http:CorsConfig corsConfig = {
@@ -460,6 +463,703 @@ service / on new http:Listener(8080) {
             "message": "New messages retrieved successfully",
             "messages": messagesJson,
             "totalMessages": messagesJson.length()
+        };
+    }
+
+    // ============ LOST ITEM ENDPOINTS ============
+
+    // Report a lost item
+    resource function post lostitems(@http:Payload json payload) returns json|http:BadRequest|http:InternalServerError {
+        io:println("📋 Reporting lost item with payload: " + payload.toJsonString());
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+
+        // Parse and validate request
+        do {
+            lostitem:ReportLostItemRequest lostItemRequest = check payload.cloneWithType(lostitem:ReportLostItemRequest);
+            json|error result = lostitem:reportLostItem(btuDb, lostItemRequest);
+            
+            if result is error {
+                io:println("❌ Error reporting lost item: " + result.message());
+                return {
+                    "status": "error",
+                    "message": "Failed to report lost item: " + result.message()
+                };
+            }
+            
+            return result;
+        } on fail error e {
+            io:println("❌ Invalid lost item request: " + e.message());
+            return http:BAD_REQUEST;
+        }
+    }
+
+    // Get all lost items with optional filtering
+    resource function get lostitems(string? category = (), string? city = (), string? state = (), 
+                                   decimal? latitude = (), decimal? longitude = (), decimal? radiusKm = (),
+                                   string? keyword = (), string? dateFrom = (), string? dateTo = (),
+                                   int? 'limit = (), int? offset = ()) returns json|http:InternalServerError {
+        io:println("🔍 Getting lost items with filters");
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+
+        // Build search parameters
+        lostitem:SearchLostItemsRequest? searchParams = ();
+        if category is string || city is string || state is string || latitude is decimal || 
+           keyword is string || dateFrom is string || dateTo is string || 'limit is int || offset is int {
+            searchParams = {
+                category: category,
+                city: city,
+                state: state,
+                latitude: latitude,
+                longitude: longitude,
+                radiusKm: radiusKm,
+                keyword: keyword,
+                dateFrom: dateFrom,
+                dateTo: dateTo,
+                'limit: 'limit,
+                offset: offset
+            };
+        }
+
+        json|error result = lostitem:getLostItems(btuDb, searchParams);
+        if result is error {
+            io:println("❌ Error getting lost items: " + result.message());
+            return {
+                "status": "error",
+                "message": "Failed to retrieve lost items: " + result.message()
+            };
+        }
+        
+        return result;
+    }
+
+    // Get lost item by ID
+    resource function get lostitems/[string itemId]() returns json|http:InternalServerError {
+        io:println("🔍 Getting lost item by ID: " + itemId);
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+
+        json|error result = lostitem:getLostItemById(btuDb, itemId);
+        if result is error {
+            io:println("❌ Error getting lost item: " + result.message());
+            return {
+                "status": "error",
+                "message": "Failed to retrieve lost item: " + result.message()
+            };
+        }
+        
+        return result;
+    }
+
+    // Search lost items by location
+    resource function get lostitems/location/[decimal latitude]/[decimal longitude](decimal radiusKm = 10.0) returns json|http:InternalServerError {
+        io:println("📍 Searching lost items near location: " + latitude.toString() + ", " + longitude.toString() + " within " + radiusKm.toString() + " km");
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+
+        json|error result = lostitem:searchLostItemsByLocation(btuDb, latitude, longitude, radiusKm);
+        if result is error {
+            io:println("❌ Error searching lost items by location: " + result.message());
+            return {
+                "status": "error",
+                "message": "Failed to search lost items by location: " + result.message()
+            };
+        }
+        
+        return result;
+    }
+
+    // Update lost item status
+    resource function put lostitems/[string itemId]/status(@http:Payload json payload) returns json|http:BadRequest|http:InternalServerError {
+        io:println("📝 Updating lost item status for ID: " + itemId);
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+
+        // Extract status from payload
+        json|error statusJson = payload.status;
+        if statusJson is error {
+            return http:BAD_REQUEST;
+        }
+        
+        string newStatus = statusJson.toString();
+
+        json|error result = lostitem:updateLostItemStatus(btuDb, itemId, newStatus);
+        if result is error {
+            io:println("❌ Error updating lost item status: " + result.message());
+            return {
+                "status": "error",
+                "message": "Failed to update lost item status: " + result.message()
+            };
+        }
+        
+        return result;
+    }
+
+    // Get lost items by reporter email
+    resource function get lostitems/reporter/[string reporterEmail]() returns json|http:InternalServerError {
+        io:println("👤 Getting lost items for reporter: " + reporterEmail);
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+
+        json|error result = lostitem:getLostItemsByReporter(btuDb, reporterEmail);
+        if result is error {
+            io:println("❌ Error getting reporter's lost items: " + result.message());
+            return {
+                "status": "error",
+                "message": "Failed to retrieve reporter's lost items: " + result.message()
+            };
+        }
+        
+        return result;
+    }
+
+    // ============ FILE UPLOAD/DOWNLOAD ENDPOINTS ============
+
+    // Upload file endpoint
+    resource function post files(http:Request request) returns json|http:BadRequest|http:InternalServerError|error {
+        io:println("📁 Processing file upload request");
+        
+        // Check content type
+        string|error contentType = request.getContentType();
+        if contentType is error || !contentType.startsWith("multipart/form-data") {
+            return http:BAD_REQUEST;
+        }
+        
+        do {
+            // Parse multipart request
+            mime:Entity[]|error bodyParts = request.getBodyParts();
+            if bodyParts is error {
+                io:println("❌ Error parsing multipart request: " + bodyParts.message());
+                return http:BAD_REQUEST;
+            }
+            
+            string uploadedBy = "";
+            string category = "";
+            byte[] fileContent = [];
+            string fileName = "";
+            string fileType = "";
+            
+            // Process each part
+            foreach mime:Entity part in bodyParts {
+                string|error partName = part.getContentDisposition().name;
+                if partName is string {
+                    if partName == "uploadedBy" {
+                        uploadedBy = check part.getText();
+                    } else if partName == "category" {
+                        category = check part.getText();
+                    } else if partName == "file" {
+                        fileContent = check part.getByteArray();
+                        mime:ContentDisposition|error disposition = part.getContentDisposition();
+                        if disposition is mime:ContentDisposition && disposition.fileName is string {
+                            fileName = disposition.fileName;
+                        }
+                        string|error partContentType = part.getContentType();
+                        if partContentType is string {
+                            fileType = partContentType;
+                        }
+                    }
+                }
+            }
+            
+            // Validate required fields
+            if uploadedBy == "" || fileName == "" || fileContent.length() == 0 {
+                return {
+                    "status": "error",
+                    "message": "Missing required fields: uploadedBy, file, or fileName"
+                };
+            }
+            
+            // Validate file size (max 10MB for example)
+            if fileContent.length() > 10485760 { // 10MB
+                return {
+                    "status": "error",
+                    "message": "File size too large. Maximum allowed size is 10MB"
+                };
+            }
+            
+            // Validate file type
+            if !file:isValidFileType(fileType) {
+                return {
+                    "status": "error",
+                    "message": "File type not allowed. Allowed types: images, PDF, documents, text files"
+                };
+            }
+            
+            // Upload file
+            file:UploadResponse|error uploadResult = file:uploadFile(fileContent, fileName, fileType, uploadedBy);
+            if uploadResult is error {
+                io:println("❌ File upload failed: " + uploadResult.message());
+                return {
+                    "status": "error",
+                    "message": "File upload failed: " + uploadResult.message()
+                };
+            }
+            
+            // Store metadata in database
+            mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+            if btuDbResult is error {
+                return http:INTERNAL_SERVER_ERROR;
+            }
+            mongodb:Database btuDb = btuDbResult;
+            
+            mongodb:Collection filesCollection = check btuDb->getCollection("files");
+            
+            // Create enhanced metadata record
+            map<json> fileRecord = {
+                "fileId": uploadResult.fileId,
+                "originalFileName": uploadResult.metadata.originalFileName,
+                "fileUrl": uploadResult.fileUrl,
+                "contentType": uploadResult.metadata.contentType,
+                "fileSize": uploadResult.metadata.fileSize,
+                "uploadedBy": uploadResult.metadata.uploadedBy,
+                "uploadTimestamp": uploadResult.metadata.uploadTimestamp,
+                "bucketName": uploadResult.metadata.bucketName,
+                "s3Key": uploadResult.metadata.s3Key,
+                "category": category,
+                "status": "active"
+            };
+            
+            check filesCollection->insertOne(fileRecord);
+            
+            io:println("✅ File upload completed: " + uploadResult.fileId);
+            
+            return {
+                "status": "success",
+                "message": "File uploaded successfully",
+                "fileId": uploadResult.fileId,
+                "fileName": fileName,
+                "fileUrl": uploadResult.fileUrl,
+                "fileSize": uploadResult.metadata.fileSize,
+                "contentType": fileType,
+                "category": category
+            };
+            
+        } on fail error e {
+            io:println("❌ File upload error: " + e.message());
+            return http:BAD_REQUEST;
+        }
+    }
+
+    // Download file endpoint
+    resource function get files/[string fileId]/download() returns http:Response|http:NotFound|http:InternalServerError|error {
+        io:println("📥 Processing file download request for: " + fileId);
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Get file metadata from database
+        mongodb:Collection filesCollection = check btuDb->getCollection("files");
+        map<json> filter = {"fileId": fileId, "status": "active"};
+        
+        stream<map<json>, error?> findResult = check filesCollection->find(filter);
+        map<json>[] files = check from map<json> file in findResult select file;
+        
+        if files.length() == 0 {
+            return http:NOT_FOUND;
+        }
+        
+        map<json> fileRecord = files[0];
+        string s3Key = fileRecord.get("s3Key").toString();
+        string fileName = fileRecord.get("originalFileName").toString();
+        string contentType = fileRecord.get("contentType").toString();
+        
+        // Download file from S3/R2
+        byte[]|error fileContent = file:downloadFile(s3Key);
+        if fileContent is error {
+            io:println("❌ File download failed: " + fileContent.message());
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        
+        // Create response with file content
+        http:Response response = new;
+        response.setBinaryPayload(fileContent, contentType);
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
+        response.setHeader("Content-Length", fileContent.length().toString());
+        
+        io:println("✅ File download completed: " + fileId);
+        return response;
+    }
+
+    // Get file metadata endpoint
+    resource function get files/[string fileId]() returns json|http:NotFound|http:InternalServerError|error {
+        io:println("ℹ️ Getting file metadata for: " + fileId);
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Get file metadata from database
+        mongodb:Collection filesCollection = check btuDb->getCollection("files");
+        map<json> filter = {"fileId": fileId, "status": "active"};
+        
+        stream<map<json>, error?> findResult = check filesCollection->find(filter);
+        map<json>[] files = check from map<json> file in findResult select file;
+        
+        if files.length() == 0 {
+            return {
+                "status": "error",
+                "message": "File not found"
+            };
+        }
+        
+        map<json> fileRecord = files[0];
+        
+        return {
+            "status": "success",
+            "message": "File metadata retrieved successfully",
+            "file": {
+                "fileId": fileRecord.get("fileId"),
+                "originalFileName": fileRecord.get("originalFileName"),
+                "fileUrl": fileRecord.get("fileUrl"),
+                "contentType": fileRecord.get("contentType"),
+                "fileSize": fileRecord.get("fileSize"),
+                "uploadedBy": fileRecord.get("uploadedBy"),
+                "uploadTimestamp": fileRecord.get("uploadTimestamp"),
+                "category": fileRecord.get("category"),
+                "status": fileRecord.get("status")
+            }
+        };
+    }
+
+    // List files by user endpoint
+    resource function get files/user/[string userId]() returns json|http:InternalServerError|error {
+        io:println("📋 Listing files for user: " + userId);
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Get user's files from database
+        mongodb:Collection filesCollection = check btuDb->getCollection("files");
+        map<json> filter = {"uploadedBy": userId, "status": "active"};
+        
+        stream<map<json>, error?> findResult = check filesCollection->find(filter);
+        map<json>[] files = check from map<json> file in findResult select file;
+        
+        json[] filesJson = [];
+        foreach map<json> file in files {
+            json fileJson = {
+                "fileId": file.get("fileId"),
+                "originalFileName": file.get("originalFileName"),
+                "fileUrl": file.get("fileUrl"),
+                "contentType": file.get("contentType"),
+                "fileSize": file.get("fileSize"),
+                "uploadTimestamp": file.get("uploadTimestamp"),
+                "category": file.get("category")
+            };
+            filesJson.push(fileJson);
+        }
+        
+        return {
+            "status": "success",
+            "message": "User files retrieved successfully",
+            "files": filesJson,
+            "totalFiles": files.length(),
+            "userId": userId
+        };
+    }
+
+    // Delete file endpoint
+    resource function delete files/[string fileId](@http:Payload json payload) returns json|http:BadRequest|http:NotFound|http:InternalServerError|error {
+        io:println("🗑️ Deleting file: " + fileId);
+        
+        // Get userId from payload
+        json|error userIdJson = payload.userId;
+        if userIdJson is error {
+            return http:BAD_REQUEST;
+        }
+        string userId = userIdJson.toString();
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Check if file exists and belongs to user
+        mongodb:Collection filesCollection = check btuDb->getCollection("files");
+        map<json> filter = {"fileId": fileId, "uploadedBy": userId, "status": "active"};
+        
+        stream<map<json>, error?> findResult = check filesCollection->find(filter);
+        map<json>[] files = check from map<json> file in findResult select file;
+        
+        if files.length() == 0 {
+            return {
+                "status": "error",
+                "message": "File not found or you don't have permission to delete it"
+            };
+        }
+        
+        map<json> fileRecord = files[0];
+        string s3Key = fileRecord.get("s3Key").toString();
+        
+        // Delete file from S3/R2
+        error? deleteResult = file:deleteFile(s3Key);
+        if deleteResult is error {
+            io:println("❌ Failed to delete file from S3: " + deleteResult.message());
+            // Continue with soft delete even if S3 delete fails
+        }
+        
+        // Soft delete in database
+        map<json> updateDoc = {"status": "deleted"};
+        mongodb:UpdateResult updateResult = check filesCollection->updateOne(filter, {"$set": updateDoc});
+        
+        if updateResult.modifiedCount == 0 {
+            return {
+                "status": "error",
+                "message": "Failed to delete file"
+            };
+        }
+        
+        io:println("✅ File deleted successfully: " + fileId);
+        
+        return {
+            "status": "success",
+            "message": "File deleted successfully",
+            "fileId": fileId
+        };
+    }
+
+    // Generate signed URL endpoint
+    resource function post files/[string fileId]/signedurl(@http:Payload json payload) returns json|http:NotFound|http:InternalServerError|error {
+        io:println("🔗 Generating signed URL for file: " + fileId);
+        
+        // Get expiry from payload (optional, default 1 hour)
+        int expirySeconds = 3600; // 1 hour default
+        json|error expiryJson = payload.expirySeconds;
+        if expiryJson is int {
+            expirySeconds = expiryJson;
+        }
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Get file metadata
+        mongodb:Collection filesCollection = check btuDb->getCollection("files");
+        map<json> filter = {"fileId": fileId, "status": "active"};
+        
+        stream<map<json>, error?> findResult = check filesCollection->find(filter);
+        map<json>[] files = check from map<json> file in findResult select file;
+        
+        if files.length() == 0 {
+            return {
+                "status": "error",
+                "message": "File not found"
+            };
+        }
+        
+        map<json> fileRecord = files[0];
+        string s3Key = fileRecord.get("s3Key").toString();
+        
+        // Generate signed URL
+        string|error signedUrl = file:generateSignedUrl(s3Key, expirySeconds);
+        if signedUrl is error {
+            io:println("❌ Failed to generate signed URL: " + signedUrl.message());
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        
+        return {
+            "status": "success",
+            "message": "Signed URL generated successfully",
+            "fileId": fileId,
+            "signedUrl": signedUrl,
+            "expirySeconds": expirySeconds
+        };
+    }
+
+    // Chat file upload endpoint
+    resource function post chat/files(http:Request request) returns json|http:BadRequest|http:InternalServerError|error {
+        io:println("📁 Processing chat file upload request");
+        
+        // Check content type
+        string|error contentType = request.getContentType();
+        if contentType is error || !contentType.startsWith("multipart/form-data") {
+            return http:BAD_REQUEST;
+        }
+        
+        // Parse multipart request
+        mime:Entity[]|error bodyParts = request.getBodyParts();
+        if bodyParts is error {
+            io:println("❌ Error parsing multipart request: " + bodyParts.message());
+            return http:BAD_REQUEST;
+        }
+        
+        string roomId = "";
+        string senderEmail = "";
+        string receiverEmail = "";
+        string message = "";
+        byte[] fileContent = [];
+        string fileName = "";
+        string fileType = "";
+        
+        // Parse form data
+        foreach mime:Entity part in bodyParts {
+            mime:ContentDisposition contentDisposition = part.getContentDisposition();
+            string fieldName = contentDisposition.name is string ? contentDisposition.name : "";
+            
+            if fieldName == "roomId" {
+                byte[]|error fieldValue = part.getByteArray();
+                if fieldValue is byte[] {
+                    roomId = check string:fromBytes(fieldValue);
+                }
+            } else if fieldName == "senderEmail" {
+                byte[]|error fieldValue = part.getByteArray();
+                if fieldValue is byte[] {
+                    senderEmail = check string:fromBytes(fieldValue);
+                }
+            } else if fieldName == "receiverEmail" {
+                byte[]|error fieldValue = part.getByteArray();
+                if fieldValue is byte[] {
+                    receiverEmail = check string:fromBytes(fieldValue);
+                }
+            } else if fieldName == "message" {
+                byte[]|error fieldValue = part.getByteArray();
+                if fieldValue is byte[] {
+                    message = check string:fromBytes(fieldValue);
+                }
+            } else if fieldName == "file" {
+                byte[]|error fieldValue = part.getByteArray();
+                if fieldValue is byte[] {
+                    fileContent = fieldValue;
+                    fileName = contentDisposition.fileName is string ? contentDisposition.fileName : "unknown_file";
+                    string? partContentType = part.getContentType();
+                    fileType = partContentType is string ? partContentType : "application/octet-stream";
+                }
+            }
+        }
+        
+        // Validate required fields
+        if roomId == "" || senderEmail == "" || receiverEmail == "" {
+            return {
+                "status": "error",
+                "message": "Missing required fields: roomId, senderEmail, receiverEmail"
+            };
+        }
+        
+        if fileContent.length() == 0 {
+            return {
+                "status": "error",
+                "message": "No file content provided"
+            };
+        }
+        
+        // Validate file type
+        if !file:isValidFileType(fileName) {
+            return {
+                "status": "error",
+                "message": "Unsupported file type: " + fileName
+            };
+        }
+        
+        // Upload file using existing file module
+        file:UploadResponse|error uploadResult = file:uploadFile(fileContent, fileName, fileType, senderEmail);
+        if uploadResult is error {
+            io:println("❌ File upload failed: " + uploadResult.message());
+            return {
+                "status": "error",
+                "message": "File upload failed: " + uploadResult.message()
+            };
+        }
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Save file message to database
+        string fileMessage = message != "" ? message : "📎 " + fileName;
+        string|error messageId = chat:saveFileMessageToDB(
+            btuDb,
+            roomId,
+            senderEmail,
+            receiverEmail,
+            fileMessage,
+            uploadResult.fileUrl,
+            fileName,
+            uploadResult.metadata.fileSize.toString(),
+            fileType
+        );
+        
+        if messageId is error {
+            io:println("❌ Failed to save file message to DB: " + messageId.message());
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        
+        // Save file metadata to files collection
+        mongodb:Collection filesCollection = check btuDb->getCollection("files");
+        map<json> fileRecord = {
+            "fileId": uploadResult.fileId,
+            "originalFileName": fileName,
+            "fileUrl": uploadResult.fileUrl,
+            "contentType": fileType,
+            "fileSize": uploadResult.metadata.fileSize,
+            "uploadedBy": senderEmail,
+            "uploadTimestamp": uploadResult.metadata.uploadTimestamp,
+            "bucketName": uploadResult.metadata.bucketName,
+            "s3Key": uploadResult.metadata.s3Key,
+            "status": "active",
+            "relatedMessageId": messageId,
+            "chatRoomId": roomId
+        };
+        
+        check filesCollection->insertOne(fileRecord);
+        
+        return {
+            "status": "success",
+            "message": "File uploaded and message sent successfully",
+            "messageId": messageId,
+            "fileId": uploadResult.fileId,
+            "fileUrl": uploadResult.fileUrl,
+            "fileName": fileName,
+            "fileSize": uploadResult.metadata.fileSize
         };
     }
 
