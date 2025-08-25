@@ -15,6 +15,7 @@ dependencies = [
 	{org = "ballerina", name = "crypto"},
 	{org = "ballerina", name = "http"},
 	{org = "ballerina", name = "io"},
+	{org = "ballerina", name = "mime"},
 	{org = "ballerina", name = "test"},
 	{org = "ballerina", name = "time"},
 	{org = "ballerina", name = "uuid"},
@@ -25,6 +26,7 @@ dependencies = [
 modules = [
 	{org = "adeep", packageName = "Backend", moduleName = "Backend"},
 	{org = "adeep", packageName = "Backend", moduleName = "Backend.chat"},
+	{org = "adeep", packageName = "Backend", moduleName = "Backend.file"},
 	{org = "adeep", packageName = "Backend", moduleName = "Backend.lostitem"},
 	{org = "adeep", packageName = "Backend", moduleName = "Backend.user"}
 ]
@@ -260,6 +262,9 @@ dependencies = [
 	{org = "ballerina", name = "jballerina.java"},
 	{org = "ballerina", name = "lang.int"},
 	{org = "ballerina", name = "log"}
+]
+modules = [
+	{org = "ballerina", packageName = "mime", moduleName = "mime"}
 ]
 
 [[package]]
