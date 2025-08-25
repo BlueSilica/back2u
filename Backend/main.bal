@@ -709,7 +709,7 @@ service / on new http:Listener(8080) {
             }
             
             // Validate file type
-            if !file:isValidFileType(fileType) {
+            if !file:isValidFileType(fileName) {
                 return {
                     "status": "error",
                     "message": "File type not allowed. Allowed types: images, PDF, documents, text files"

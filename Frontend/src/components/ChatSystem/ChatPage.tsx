@@ -37,6 +37,7 @@ export default function ChatPage() {
   const [isPolling, setIsPolling] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
+  const [filePreview, setFilePreview] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pollingIntervalRef = useRef<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -209,8 +210,15 @@ export default function ChatPage() {
 
   // Send message function with API integration
   const sendMessage = async () => {
-    if (!input.trim() || !selectedPartner || !user?.email) return
+    if ((!input.trim() && !selectedFile) || !selectedPartner || !user?.email) return
 
+    // If there's a file, upload and send file message
+    if (selectedFile) {
+      await uploadAndSendFile(selectedFile)
+      return
+    }
+
+    // Otherwise send text message
     const messageText = input
     setInput('') // Clear input immediately for better UX
 
@@ -266,8 +274,25 @@ export default function ChatPage() {
       console.log('📎 File selected:', file.name, 'Size:', file.size)
       setSelectedFile(file)
       
-      // Automatically upload and send the file
-      uploadAndSendFile(file)
+      // Create preview for images
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          setFilePreview(e.target?.result as string)
+        }
+        reader.readAsDataURL(file)
+      } else {
+        setFilePreview(null)
+      }
+    }
+  }
+
+  // Clear selected file
+  const clearSelectedFile = () => {
+    setSelectedFile(null)
+    setFilePreview(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
     }
   }
 
@@ -343,18 +368,20 @@ export default function ChatPage() {
           }
           setMessages(prev => [...prev, newMessage])
           setLastMessageTimestamp(timestamp)
+          
+          // Clear the selected file after successful sending
+          clearSelectedFile()
         }
+      } else {
+        // Show error message to user
+        console.error('Upload error:', uploadData.message)
+        alert(`Upload failed: ${uploadData.message}`)
       }
     } catch (err) {
       console.error('💥 Error uploading/sending file:', err)
-      // You could show an error message to the user here
+      alert('Failed to upload file. Please try again.')
     } finally {
       setIsUploading(false)
-      setSelectedFile(null)
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
     }
   }
 
@@ -506,6 +533,48 @@ export default function ChatPage() {
               </div>
 
               <footer className="p-4 border-t bg-white flex-shrink-0">
+                {/* File preview area */}
+                {selectedFile && (
+                  <div className="mb-3 p-3 bg-gray-50 rounded-lg border">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">File to send:</span>
+                      <button
+                        onClick={clearSelectedFile}
+                        className="text-gray-400 hover:text-red-500 p-1"
+                        title="Remove file"
+                      >
+                        ❌
+                      </button>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      <div className="text-2xl">
+                        {selectedFile.type.startsWith('image/') ? '🖼️' : 
+                         selectedFile.type.startsWith('video/') ? '🎥' : 
+                         selectedFile.type.startsWith('audio/') ? '🎵' : 
+                         selectedFile.type.includes('pdf') ? '📄' : '📎'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{selectedFile.name}</div>
+                        <div className="text-xs text-gray-500">
+                          {(selectedFile.size / 1024).toFixed(1)} KB • {selectedFile.type}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Image preview */}
+                    {filePreview && selectedFile.type.startsWith('image/') && (
+                      <div className="mt-2">
+                        <img 
+                          src={filePreview} 
+                          alt={selectedFile.name} 
+                          className="max-w-32 max-h-32 rounded object-cover"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+                
                 <div className="flex gap-2 w-full">
                   {/* Hidden file input */}
                   <input
@@ -537,16 +606,20 @@ export default function ChatPage() {
                     onKeyPress={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
                     disabled={isUploading}
                     className="flex-1 px-4 py-3 border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed" 
-                    placeholder={isUploading ? 'Uploading file...' : `Message ${selectedPartner.partnerName}...`} 
+                    placeholder={
+                      isUploading ? 'Uploading file...' : 
+                      selectedFile ? `Send ${selectedFile.name} with message...` :
+                      `Message ${selectedPartner.partnerName}...`
+                    } 
                   />
                   <button
                     type="button"
                     aria-label="Send message"
                     onClick={sendMessage}
-                    disabled={!input.trim() || isUploading}
+                    disabled={(!input.trim() && !selectedFile) || isUploading}
                     className="px-5 py-3 bg-purple-600 text-white rounded-lg shadow-lg hover:bg-purple-700 border border-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-300 dark:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isUploading ? 'Uploading...' : 'Send'}
+                    {isUploading ? 'Uploading...' : selectedFile ? 'Send File' : 'Send'}
                   </button>
                 </div>
                 
