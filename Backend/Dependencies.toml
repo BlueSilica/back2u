@@ -8,32 +8,6 @@ dependencies-toml-version = "2"
 distribution-version = "2201.12.7"
 
 [[package]]
-org = "adeep"
-name = "Backend"
-version = "0.1.0"
-dependencies = [
-	{org = "ballerina", name = "crypto"},
-	{org = "ballerina", name = "http"},
-	{org = "ballerina", name = "io"},
-	{org = "ballerina", name = "mime"},
-	{org = "ballerina", name = "regex"},
-	{org = "ballerina", name = "test"},
-	{org = "ballerina", name = "time"},
-	{org = "ballerina", name = "uuid"},
-	{org = "ballerina", name = "websocket"},
-	{org = "ballerinai", name = "observe"},
-	{org = "ballerinax", name = "aws.s3"},
-	{org = "ballerinax", name = "mongodb"}
-]
-modules = [
-	{org = "adeep", packageName = "Backend", moduleName = "Backend"},
-	{org = "adeep", packageName = "Backend", moduleName = "Backend.chat"},
-	{org = "adeep", packageName = "Backend", moduleName = "Backend.file"},
-	{org = "adeep", packageName = "Backend", moduleName = "Backend.lostitem"},
-	{org = "adeep", packageName = "Backend", moduleName = "Backend.user"}
-]
-
-[[package]]
 org = "ballerina"
 name = "auth"
 version = "2.14.0"
@@ -391,18 +365,6 @@ modules = [
 ]
 
 [[package]]
-org = "ballerinai"
-name = "observe"
-version = "0.0.0"
-dependencies = [
-	{org = "ballerina", name = "jballerina.java"},
-	{org = "ballerina", name = "observe"}
-]
-modules = [
-	{org = "ballerinai", packageName = "observe", moduleName = "observe"}
-]
-
-[[package]]
 org = "ballerinax"
 name = "aws.s3"
 version = "3.5.0"
@@ -443,5 +405,30 @@ dependencies = [
 ]
 modules = [
 	{org = "ballerinax", packageName = "mongodb", moduleName = "mongodb"}
+]
+
+[[package]]
+org = "lenovo"
+name = "Backend"
+version = "0.1.0"
+dependencies = [
+	{org = "ballerina", name = "crypto"},
+	{org = "ballerina", name = "http"},
+	{org = "ballerina", name = "io"},
+	{org = "ballerina", name = "mime"},
+	{org = "ballerina", name = "regex"},
+	{org = "ballerina", name = "test"},
+	{org = "ballerina", name = "time"},
+	{org = "ballerina", name = "uuid"},
+	{org = "ballerina", name = "websocket"},
+	{org = "ballerinax", name = "aws.s3"},
+	{org = "ballerinax", name = "mongodb"}
+]
+modules = [
+	{org = "lenovo", packageName = "Backend", moduleName = "Backend"},
+	{org = "lenovo", packageName = "Backend", moduleName = "Backend.chat"},
+	{org = "lenovo", packageName = "Backend", moduleName = "Backend.file"},
+	{org = "lenovo", packageName = "Backend", moduleName = "Backend.lostitem"},
+	{org = "lenovo", packageName = "Backend", moduleName = "Backend.user"}
 ]
 
