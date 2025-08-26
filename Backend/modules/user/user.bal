@@ -318,3 +318,127 @@ public function handleUserLogin(mongodb:Database db, LoginRequest loginRequest) 
     
     return response;
 }
+
+// Update user function
+public function updateUser(mongodb:Database db, string userId, UpdateUserRequest updateRequest) returns User|error {
+    io:println("🔄 updateUser function called");
+    io:println("📍 User ID: " + userId);
+    
+    mongodb:Collection usersCollection = check db->getCollection("users");
+    
+    // Create ObjectId filter for MongoDB
+    map<json> filter = {"_id": {"$oid": userId}};
+    io:println("🔍 Filter: " + filter.toString());
+    
+    // Build update document
+    map<json> updateDoc = {};
+    
+    if updateRequest.email is string {
+        updateDoc["email"] = updateRequest.email;
+        io:println("📧 Email to update: " + updateRequest.email.toString());
+    }
+    if updateRequest.phoneNumber is string {
+        updateDoc["phoneNumber"] = updateRequest.phoneNumber;
+        io:println("📱 Phone to update: " + updateRequest.phoneNumber.toString());
+    }
+    if updateRequest.address is Address {
+        Address addr = <Address>updateRequest.address;
+        updateDoc["address"] = {
+            "number": addr.number,
+            "address": addr.address,
+            "postalCode": addr.postalCode,
+            "city": addr.city,
+            "country": addr.country
+        };
+        io:println("🏠 Address to update: " + addr.toString());
+    }
+    if updateRequest.firstName is string {
+        updateDoc["firstName"] = updateRequest.firstName;
+        io:println("👤 First name to update: " + updateRequest.firstName.toString());
+    }
+    if updateRequest.lastName is string {
+        updateDoc["lastName"] = updateRequest.lastName;
+        io:println("👤 Last name to update: " + updateRequest.lastName.toString());
+    }
+    if updateRequest.picURL is string {
+        updateDoc["picURL"] = updateRequest.picURL;
+        io:println("🖼️ Picture URL to update: " + updateRequest.picURL.toString());
+    }
+    
+    // Add updatedAt timestamp
+    updateDoc["updatedAt"] = time:utcNow();
+    
+    io:println("📝 Final update document: " + updateDoc.toString());
+    
+    // Perform update
+    mongodb:UpdateResult updateResult = check usersCollection->updateOne(filter, {"$set": updateDoc});
+    
+    io:println("📊 Update result - matched: " + updateResult.matchedCount.toString() + ", modified: " + updateResult.modifiedCount.toString());
+    
+    if updateResult.modifiedCount == 0 {
+        if updateResult.matchedCount == 0 {
+            return error("No user found with ID: " + userId);
+        } else {
+            return error("No changes made to user with ID: " + userId);
+        }
+    }
+    
+    // Get updated user
+    record {}? updatedUserRecord = check usersCollection->findOne(filter);
+    if updatedUserRecord is () {
+        return error("User not found after update");
+    }
+    
+    io:println("✅ User record retrieved after update");
+    
+    // Convert to User type
+    json updatedUserJson = updatedUserRecord.toJson();
+    User updatedUser = check updatedUserJson.cloneWithType(User);
+    
+    return updatedUser;
+}
+
+// Handle user update
+public function handleUpdateUser(mongodb:Database db, string userId, UpdateUserRequest updateRequest) returns json|http:BadRequest|http:InternalServerError {
+    io:println("🔧 Starting handleUpdateUser...");
+    io:println("📍 User ID received: " + userId);
+    io:println("📝 Update request: " + updateRequest.toString());
+    
+    // Update user
+    User|error updateResult = updateUser(db, userId, updateRequest);
+    if updateResult is error {
+        io:println("❌ Update error: " + updateResult.message());
+        if updateResult.message().includes("No user found") {
+            json errorResponse = {"error": "User not found or no changes made"};
+            return <http:BadRequest>{body: errorResponse};
+        }
+        return http:INTERNAL_SERVER_ERROR;
+    }
+    
+    User updatedUser = updateResult;
+    io:println("✅ User updated successfully");
+    
+    // Return success response (without password hash)
+    json response = {
+        "message": "User updated successfully",
+        "user": {
+            "_id": updatedUser._id,
+            "email": updatedUser.email,
+            "phoneNumber": updatedUser.phoneNumber,
+            "address": {
+                "number": updatedUser.address.number,
+                "address": updatedUser.address.address,
+                "postalCode": updatedUser.address.postalCode,
+                "city": updatedUser.address.city,
+                "country": updatedUser.address.country
+            },
+            "firstName": updatedUser.firstName,
+            "lastName": updatedUser.lastName,
+            "picURL": updatedUser.picURL,
+            "createdAt": updatedUser.createdAt.toString(),
+            "updatedAt": updatedUser.updatedAt.toString()
+        }
+    };
+    
+    return response;
+}

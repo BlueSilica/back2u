@@ -9,7 +9,7 @@ import Backend.file;
 
 // CORS configuration
 http:CorsConfig corsConfig = {
-    allowOrigins: ["http://localhost:5173", "http://localhost:3000"],
+    allowOrigins: ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:3000"],
     allowCredentials: false,
     allowHeaders: ["CORELATION_ID", "Authorization", "Content-Type", "ngrok-skip-browser-warning"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
@@ -83,23 +83,31 @@ service / on new http:Listener(8080) {
         return user:handleCreateUser(btuDb, userRequest);
     }
 
-    // Update user endpoint (simple implementation)
+    // Update user endpoint
     resource function put users/[string userId](@http:Payload json updateRequest) returns json|http:BadRequest|http:InternalServerError {
+        io:println("🌐 PUT /users/" + userId + " endpoint called");
+        io:println("📥 Raw update request: " + updateRequest.toString());
+        
         // Get database
         mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
         if btuDbResult is error {
+            io:println("❌ Database connection error: " + btuDbResult.message());
             return http:INTERNAL_SERVER_ERROR;
         }
         mongodb:Database btuDb = btuDbResult;
         
-        // Simple response for now - you can implement full update logic later
-        json response = {
-            "message": "User update endpoint ready",
-            "userId": userId,
-            "data": updateRequest
-        };
+        // Parse update request to UpdateUserRequest
+        user:UpdateUserRequest|error updateUserRequest = updateRequest.cloneWithType(user:UpdateUserRequest);
+        if updateUserRequest is error {
+            io:println("❌ Failed to parse update request: " + updateUserRequest.message());
+            json errorResponse = {"error": "Invalid update request format"};
+            return <http:BadRequest>{body: errorResponse};
+        }
         
-        return response;
+        io:println("✅ Parsed update request successfully");
+        
+        // Delegate to user module
+        return user:handleUpdateUser(btuDb, userId, updateUserRequest);
     }
 
     // Login endpoint

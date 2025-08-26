@@ -222,19 +222,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setIsLoading(true);
 
     try {
+      console.log("🔄 Starting user update...");
+      console.log("User ID:", userId);
+      console.log("Update data:", updateData);
+
+      const payload = {
+        email: updateData.email,
+        phoneNumber: updateData.phoneNumber,
+        address: updateData.address,
+        firstName: updateData.name?.split(" ")[0],
+        lastName: updateData.name?.split(" ").slice(1).join(" "),
+      };
+
+      console.log("📤 Sending payload:", payload);
+
       const response = await fetch(`http://localhost:8080/users/${userId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          email: updateData.email,
-          phoneNumber: updateData.phoneNumber,
-          address: updateData.address,
-          firstName: updateData.name?.split(" ")[0],
-          lastName: updateData.name?.split(" ").slice(1).join(" "),
-        }),
+        body: JSON.stringify(payload),
       });
+
+      console.log("📊 Response status:", response.status);
+      console.log("📊 Response ok:", response.ok);
 
       if (response.ok) {
         const data = await response.json();
@@ -268,11 +279,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setIsLoading(false);
         return true;
       } else {
+        const errorData = await response.text();
+        console.error("❌ Update failed with response:", errorData);
         setIsLoading(false);
         return false;
       }
     } catch (error) {
-      console.error("Update error:", error);
+      console.error("❌ Update error:", error);
       setIsLoading(false);
       return false;
     }
