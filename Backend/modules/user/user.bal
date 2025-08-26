@@ -243,6 +243,16 @@ public function getUserByEmailForChat(mongodb:Database db, string email) returns
     return result.toJson();
 }
 
+// User update request
+public type UpdateUserRequest record {
+    string email?;
+    string phoneNumber?;
+    Address address?;
+    string firstName?;
+    string lastName?;
+    string picURL?;
+};
+
 // Handle user login
 public function handleUserLogin(mongodb:Database db, LoginRequest loginRequest) returns json|http:BadRequest|http:InternalServerError {
     // Get user by email as record

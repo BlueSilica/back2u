@@ -83,6 +83,25 @@ service / on new http:Listener(8080) {
         return user:handleCreateUser(btuDb, userRequest);
     }
 
+    // Update user endpoint (simple implementation)
+    resource function put users/[string userId](@http:Payload json updateRequest) returns json|http:BadRequest|http:InternalServerError {
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Simple response for now - you can implement full update logic later
+        json response = {
+            "message": "User update endpoint ready",
+            "userId": userId,
+            "data": updateRequest
+        };
+        
+        return response;
+    }
+
     // Login endpoint
     resource function post auth/login(@http:Payload user:LoginRequest loginRequest) returns json|http:BadRequest|http:InternalServerError {
         // Get database
