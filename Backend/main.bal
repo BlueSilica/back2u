@@ -6,6 +6,7 @@ import Backend.user;
 import Backend.chat;
 import Backend.lostitem;
 import Backend.file;
+import Backend.founditem;
 
 // CORS configuration
 http:CorsConfig corsConfig = {
@@ -661,6 +662,56 @@ service / on new http:Listener(8080) {
         }
         
         return result;
+    }
+
+    // ============ FOUND ITEM ENDPOINTS ============
+
+    // Report a found item
+    resource function post founditems(@http:Payload json payload) returns json|http:BadRequest|http:InternalServerError {
+        io:println("✅ Reporting found item with payload: " + payload.toJsonString());
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+
+        // Parse and validate the request payload
+        do {
+            founditem:ReportFoundItemRequest foundItemRequest = check payload.cloneWithType(founditem:ReportFoundItemRequest);
+            
+            // Delegate the logic to the founditem module
+            json|error result = founditem:reportFoundItem(btuDb, foundItemRequest);
+            
+            if result is error {
+                io:println("❌ Error reporting found item: " + result.message());
+                return {
+                    "status": "error",
+                    "message": "Failed to report found item: " + result.message()
+                };
+            }
+            
+            return result;
+
+        } on fail error e {
+            io:println("❌ Invalid found item request payload: " + e.message());
+            return http:BAD_REQUEST;
+        }
+    }
+
+    // Explicitly handle OPTIONS preflight requests for the founditems endpoint
+    resource function options founditems() returns http:Response {
+        // Create a new HTTP response object
+        http:Response res = new;
+
+        // Manually set the headers that the browser needs to see in the preflight response
+        res.setHeader("Access-Control-Allow-Origin", "http://localhost:5173");
+        res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization"); // Add other headers if needed
+
+        // Return the response with the headers
+        return res;
     }
 
     // ============ FILE UPLOAD/DOWNLOAD ENDPOINTS ============
