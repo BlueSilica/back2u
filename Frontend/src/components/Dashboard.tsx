@@ -36,6 +36,139 @@ interface RegisteredUser {
   passwordHash?: string  // This shouldn't be in response but handle if present
 }
 
+interface MyItem {
+  itemId: string
+  itemName: string
+  itemDescription: string
+  category: string
+  status: string
+  reportDate: string
+  lostDate: string
+  itemImages?: string[]
+  lostLocation: {
+    address: string
+    city: string
+    state: string
+  }
+  reporterEmail: string
+  lastUpdated: string
+}
+
+// MyItemsSection Component
+const MyItemsSection = ({ user }: { user: { email?: string; name?: string } | null }) => {
+  const [myItems, setMyItems] = useState<MyItem[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const loadData = async () => {
+      if (!user?.email) return
+      
+      setLoading(true)
+      
+      try {
+        // Fetch user's items
+        const itemsResponse = await fetch(`http://localhost:8080/lostitems?reporterEmail=${encodeURIComponent(user.email)}`)
+        if (itemsResponse.ok) {
+          const itemsData = await itemsResponse.json()
+          setMyItems(itemsData.items || [])
+        }
+      } catch (error) {
+        console.error('Error fetching my items:', error)
+      }
+      
+      setLoading(false)
+    }
+    
+    loadData()
+  }, [user?.email])
+
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(parseInt(dateString))
+      return date.toLocaleDateString()
+    } catch {
+      return dateString
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl p-8 text-center">
+        <div className="text-4xl mb-4">⏳</div>
+        <p className="text-gray-600">Loading your items...</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {myItems.length === 0 ? (
+        <div className="bg-white rounded-xl p-8 text-center">
+          <div className="text-6xl mb-4">📋</div>
+          <h3 className="text-xl font-semibold text-gray-800 mb-2">No Items Reported Yet</h3>
+          <p className="text-gray-600 mb-6">Start by reporting a lost or found item</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {myItems.map((item) => (
+            <div key={item.itemId} className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800">{item.itemName}</h3>
+                  <p className="text-sm text-gray-500">Reported on {formatDate(item.reportDate)}</p>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                  item.status === 'lost' ? 'bg-red-100 text-red-800' :
+                  item.status === 'found' ? 'bg-green-100 text-green-800' :
+                  'bg-gray-100 text-gray-800'
+                }`}>
+                  {item.status.toUpperCase()}
+                </span>
+              </div>
+              
+              <p className="text-gray-600 mb-3">{item.itemDescription}</p>
+              
+              <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
+                <div>
+                  <strong>Category:</strong> {item.category}
+                </div>
+                <div>
+                  <strong>Location:</strong> {item.lostLocation.address}
+                </div>
+                <div>
+                  <strong>Date Lost:</strong> {formatDate(item.lostDate)}
+                </div>
+                <div>
+                  <strong>Last Updated:</strong> {formatDate(item.lastUpdated)}
+                </div>
+              </div>
+
+              {item.itemImages && item.itemImages.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Attached Images:</p>
+                  <div className="flex space-x-2">
+                    {item.itemImages.map((imageUrl, index) => (
+                      <a
+                        key={index}
+                        href={imageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-block px-3 py-1 bg-blue-100 text-blue-600 text-xs rounded hover:bg-blue-200"
+                      >
+                        📷 Image {index + 1}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const Dashboard = () => {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<'feed' | 'my-items' | 'reports' | 'users'>('feed')
@@ -43,6 +176,23 @@ const Dashboard = () => {
   const [reportType, setReportType] = useState<'lost' | 'found'>('lost')
   const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
+  
+  // File upload states
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [uploadingFiles, setUploadingFiles] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
+  
+  // Form states for report modal
+  const [reportForm, setReportForm] = useState({
+    title: '',
+    description: '',
+    category: '',
+    location: '',
+    date: '',
+    contactInfo: '',
+    reward: '',
+    additionalNotes: ''
+  })
 
   // Function to fetch all registered users
   const fetchUsers = async () => {
@@ -68,6 +218,154 @@ const Dashboard = () => {
       fetchUsers()
     }
   }, [activeTab])
+
+  // File upload functions
+  const handleFileSelect = (files: FileList | null) => {
+    if (files) {
+      const newFiles = Array.from(files).filter(file => {
+        // Check file type
+        const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'application/pdf']
+        if (!validTypes.includes(file.type)) {
+          alert(`File type ${file.type} is not supported. Please use PNG, JPG, GIF, WebP, or PDF.`)
+          return false
+        }
+        // Check file size (10MB limit)
+        if (file.size > 10 * 1024 * 1024) {
+          alert(`File ${file.name} is too large. Maximum size is 10MB.`)
+          return false
+        }
+        return true
+      })
+      setSelectedFiles(prev => [...prev, ...newFiles])
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true)
+    } else if (e.type === 'dragleave') {
+      setDragActive(false)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+    handleFileSelect(e.dataTransfer.files)
+  }
+
+  const uploadFiles = async (files: File[]): Promise<string[]> => {
+    const uploadedUrls: string[] = []
+    setUploadingFiles(true)
+
+    try {
+      for (const file of files) {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('uploadedBy', user?.email || 'anonymous')
+        formData.append('category', reportType === 'lost' ? 'lost-item' : 'found-item')
+
+        const response = await fetch('http://localhost:8080/files', {
+          method: 'POST',
+          body: formData
+        })
+
+        if (response.ok) {
+          const result = await response.json()
+          uploadedUrls.push(result.fileUrl)
+        } else {
+          console.error('Failed to upload file:', file.name)
+        }
+      }
+    } catch (error) {
+      console.error('Error uploading files:', error)
+    } finally {
+      setUploadingFiles(false)
+    }
+
+    return uploadedUrls
+  }
+
+  // Handle form submission
+  const handleSubmitReport = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    try {
+      setUploadingFiles(true)
+      
+      // Upload files first
+      const fileUrls = selectedFiles.length > 0 ? await uploadFiles(selectedFiles) : []
+      
+      // Create the report request
+      const reportData = {
+        reporterEmail: user?.email || '',
+        reporterName: user?.name || '',
+        reporterPhone: user?.phoneNumber || '',
+        itemName: reportForm.title,
+        itemDescription: reportForm.description,
+        category: reportForm.category,
+        itemImages: fileUrls,
+        lostDate: reportForm.date,
+        lostLocation: {
+          address: reportForm.location,
+          city: reportForm.location.split(',')[1]?.trim() || '',
+          state: reportForm.location.split(',')[2]?.trim() || '',
+          country: 'USA',
+          latitude: 0.0, // TODO: Add location picker
+          longitude: 0.0,
+          locationDescription: reportForm.additionalNotes
+        },
+        additionalNotes: reportForm.additionalNotes,
+        contactPrefs: {
+          allowEmail: true,
+          allowPhone: true,
+          allowChat: true,
+          preferredContactTime: 'anytime'
+        }
+      }
+
+      // Submit the report
+      const response = await fetch('http://localhost:8080/lostitems', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(reportData)
+      })
+
+      if (response.ok) {
+        // Reset form and close modal
+        setReportForm({
+          title: '',
+          description: '',
+          category: '',
+          location: '',
+          date: '',
+          contactInfo: '',
+          reward: '',
+          additionalNotes: ''
+        })
+        setSelectedFiles([])
+        setShowReportModal(false)
+        alert('Report submitted successfully!')
+      } else {
+        const error = await response.json()
+        alert(`Failed to submit report: ${error.message || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error submitting report:', error)
+      alert('Error submitting report. Please try again.')
+    } finally {
+      setUploadingFiles(false)
+    }
+  }
 
   // Dummy data for the feed
   const feedItems: LostItem[] = [
@@ -185,13 +483,15 @@ const Dashboard = () => {
           </button>
         </div>
 
-        <form className="space-y-6">
+        <form className="space-y-6" onSubmit={handleSubmitReport}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Item Title *
             </label>
             <input
               type="text"
+              value={reportForm.title}
+              onChange={(e) => setReportForm(prev => ({ ...prev, title: e.target.value }))}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               placeholder="e.g., iPhone 13, Brown Wallet, Blue Backpack"
               required
@@ -202,7 +502,13 @@ const Dashboard = () => {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Category *
             </label>
-            <select className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+            <select 
+              value={reportForm.category}
+              onChange={(e) => setReportForm(prev => ({ ...prev, category: e.target.value }))}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              required
+            >
+              <option value="">Select a category</option>
               {categories.map(category => (
                 <option key={category} value={category}>{category}</option>
               ))}
@@ -215,6 +521,8 @@ const Dashboard = () => {
             </label>
             <textarea
               rows={4}
+              value={reportForm.description}
+              onChange={(e) => setReportForm(prev => ({ ...prev, description: e.target.value }))}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               placeholder={`Describe the item in detail. Include color, brand, distinctive features, etc.`}
               required
@@ -228,6 +536,8 @@ const Dashboard = () => {
               </label>
               <input
                 type="text"
+                value={reportForm.location}
+                onChange={(e) => setReportForm(prev => ({ ...prev, location: e.target.value }))}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 placeholder="Where was it lost/found?"
                 required
@@ -240,6 +550,8 @@ const Dashboard = () => {
               </label>
               <input
                 type="date"
+                value={reportForm.date}
+                onChange={(e) => setReportForm(prev => ({ ...prev, date: e.target.value }))}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 required
               />
@@ -253,6 +565,8 @@ const Dashboard = () => {
               </label>
               <input
                 type="number"
+                value={reportForm.reward}
+                onChange={(e) => setReportForm(prev => ({ ...prev, reward: e.target.value }))}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 placeholder="Enter reward amount if any"
                 min="0"
@@ -262,44 +576,109 @@ const Dashboard = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Contact Information
+              Additional Notes
             </label>
             <textarea
               rows={2}
+              value={reportForm.additionalNotes}
+              onChange={(e) => setReportForm(prev => ({ ...prev, additionalNotes: e.target.value }))}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              placeholder="How should people contact you? (Your email will be shared automatically)"
+              placeholder="Any additional information that might help..."
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Upload Image (Optional)
+              Upload Images (Optional)
             </label>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-primary-500 transition-colors">
+            <div 
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                dragActive 
+                  ? 'border-primary-500 bg-primary-50' 
+                  : 'border-gray-300 hover:border-primary-500'
+              }`}
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+            >
               <div className="text-4xl mb-4">📷</div>
               <p className="text-gray-600 mb-2">Click to upload or drag and drop</p>
-              <p className="text-sm text-gray-500">PNG, JPG up to 10MB</p>
-              <input type="file" className="hidden" accept="image/*" />
+              <p className="text-sm text-gray-500">PNG, JPG, PDF up to 10MB each</p>
+              <input 
+                type="file" 
+                multiple
+                onChange={(e) => handleFileSelect(e.target.files)}
+                className="hidden" 
+                accept="image/*,.pdf"
+                id="file-upload"
+              />
+              <label 
+                htmlFor="file-upload"
+                className="inline-block mt-4 px-4 py-2 bg-primary-500 text-white rounded-lg cursor-pointer hover:bg-primary-600 transition-colors"
+              >
+                Choose Files
+              </label>
             </div>
+            
+            {/* Display selected files */}
+            {selectedFiles.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <p className="text-sm font-medium text-gray-700">Selected Files:</p>
+                {selectedFiles.map((file, index) => (
+                  <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                    <span className="text-sm text-gray-600 truncate">{file.name}</span>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs text-gray-500">
+                        {(file.size / 1024 / 1024).toFixed(2)} MB
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeFile(index)}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex gap-4">
             <button
               type="button"
-              onClick={() => setShowReportModal(false)}
+              onClick={() => {
+                setShowReportModal(false)
+                setSelectedFiles([])
+                setReportForm({
+                  title: '',
+                  description: '',
+                  category: '',
+                  location: '',
+                  date: '',
+                  contactInfo: '',
+                  reward: '',
+                  additionalNotes: ''
+                })
+              }}
               className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
+              disabled={uploadingFiles}
               className={`flex-1 px-6 py-3 rounded-lg text-white font-medium transition-colors ${
-                reportType === 'lost' 
-                  ? 'bg-red-500 hover:bg-red-600' 
-                  : 'bg-green-500 hover:bg-green-600'
+                uploadingFiles
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : reportType === 'lost' 
+                    ? 'bg-red-500 hover:bg-red-600' 
+                    : 'bg-green-500 hover:bg-green-600'
               }`}
             >
-              Submit Report
+              {uploadingFiles ? 'Uploading...' : 'Submit Report'}
             </button>
           </div>
         </form>
@@ -485,19 +864,7 @@ const Dashboard = () => {
         )}
 
         {activeTab === 'my-items' && (
-          <div className="space-y-6">
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">📋</div>
-              <h3 className="text-xl font-semibold text-gray-800 mb-2">No Items Reported Yet</h3>
-              <p className="text-gray-600 mb-6">Start by reporting a lost or found item</p>
-              <button
-                onClick={() => setShowReportModal(true)}
-                className="btn btn-primary"
-              >
-                Report Your First Item
-              </button>
-            </div>
-          </div>
+          <MyItemsSection user={user} />
         )}
 
         {activeTab === 'users' && (

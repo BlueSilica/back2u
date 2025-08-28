@@ -14,11 +14,15 @@ configurable string r2Endpoint = ?;
 s3:ConnectionConfig r2Config = {
     accessKeyId: r2AccessKeyId,
     secretAccessKey: r2SecretAccessKey,
-    region: "us-east-1" // Use standard region for compatibility
+    region: "us-east-1", // Use standard region for compatibility
+    "endpoint": r2Endpoint // Custom endpoint for Cloudflare R2
 };
 
 // Initialize S3 client
 s3:Client r2Client = check new (r2Config);
+
+// In-memory file storage for local fallback
+map<byte[]> localFileStorage = {};
 
 // Define supported content types
 final readonly & map<string> contentTypes = {
@@ -102,48 +106,93 @@ public function uploadFile(byte[] fileContent, string fileName, string contentTy
         return error("Unsupported file type: " + fileName);
     }
     
-    // For now, use local file storage as R2 connection is not working
-    // TODO: Fix R2 connection and switch back to cloud storage
-    io:println("⚠️  Using local file storage (R2 connection issue)");
+    // Try to upload to R2 first
+    error? uploadResult = r2Client->createObject(r2BucketName, s3Key, fileContent);
+    
+    string fileUrl;
+    string storageLocation;
+    
+    if uploadResult is error {
+        io:println("⚠️  R2 upload failed, falling back to local storage: " + uploadResult.message());
+        // Store in local memory for fallback
+        localFileStorage[fileId] = fileContent;
+        // Use local storage URL as fallback
+        fileUrl = string `http://localhost:8080/files/${fileId}/download`;
+        storageLocation = "local-storage";
+    } else {
+        io:println("✅ Successfully uploaded to R2");
+        // Use R2 public URL
+        fileUrl = string `${r2Endpoint}/${s3Key}`;
+        storageLocation = r2BucketName;
+    }
     
     // Create file metadata
     FileMetadata metadata = {
         fileId: fileId,
         originalFileName: fileName,
-        fileUrl: string `http://localhost:8080/files/${fileId}/download`,
+        fileUrl: fileUrl,
         contentType: contentType,
         fileSize: fileContent.length(),
         uploadedBy: uploadedBy,
         uploadTimestamp: timestamp,
-        bucketName: "local-storage",
+        bucketName: storageLocation,
         s3Key: s3Key
     };
     
     UploadResponse response = {
         status: "success",
-        message: "File uploaded successfully (local storage)",
+        message: string `File uploaded successfully to ${storageLocation}`,
         fileId: fileId,
         fileUrl: metadata.fileUrl,
         metadata: metadata
     };
     
-    io:println("✅ File upload simulated successfully: " + fileId);
+    io:println("✅ File upload completed: " + fileId);
     return response;
 }
 
 // Download file (with local fallback)
-public function downloadFile(string s3Key) returns byte[]|error {
-    io:println("📥 Downloading file: " + s3Key);
+public function downloadFile(string fileId) returns byte[]|error {
+    io:println("📥 Downloading file: " + fileId);
     
-    // For now, return dummy content since we're using local storage
-    // TODO: Implement actual file retrieval when R2 is working
-    io:println("⚠️  Using local file storage (R2 connection issue)");
+    // First check local storage
+    if localFileStorage.hasKey(fileId) {
+        io:println("✅ File found in local storage: " + fileId);
+        return localFileStorage[fileId] ?: [];
+    }
     
-    string dummyContent = "File content for: " + s3Key + "\n\nThis is a placeholder until R2 connection is fixed.";
-    byte[] fileContent = dummyContent.toBytes();
+    // If not in local storage, return error (R2 download would need s3Key)
+    io:println("❌ File not found in local storage: " + fileId);
+    return error("File not found in local storage: " + fileId);
+}
+
+// Download file from Cloudflare R2 using S3 key
+public function downloadFileFromR2(string s3Key) returns byte[]|error {
+    io:println("📥 Downloading file from R2: " + s3Key);
+    io:println("🔧 R2 Config - Bucket: " + r2BucketName + ", Endpoint: " + r2Endpoint);
+    io:println("🔧 S3 Key: " + s3Key);
     
-    io:println("✅ File download simulated: " + s3Key);
-    return fileContent;
+    stream<byte[], io:Error?>|error getResult = r2Client->getObject(r2BucketName, s3Key);
+    
+    if getResult is error {
+        io:println("❌ R2 download failed: " + getResult.message());
+        io:println("❌ Error details: " + getResult.toString());
+        return error("Failed to download file from R2: " + getResult.message());
+    }
+    
+    byte[] combinedContent = [];
+    error? streamError = getResult.forEach(function(byte[] chunk) {
+        combinedContent.push(...chunk);
+    });
+    
+    if streamError is error {
+        io:println("❌ Error reading R2 stream: " + streamError.message());
+        return error("Failed to read file stream from R2: " + streamError.message());
+    }
+    
+    io:println("✅ File downloaded successfully from R2, size: " + combinedContent.length().toString() + " bytes");
+    
+    return combinedContent;
 }
 
 // Delete file from Cloudflare R2
@@ -254,4 +303,47 @@ public function generateSignedUrl(string s3Key, int expirySeconds) returns strin
     
     io:println("✅ Signed URL generated for R2 file: " + s3Key);
     return signedUrl;
+}
+
+// Debug function to test R2 connectivity and list bucket contents
+public function debugR2Connection() returns string|error {
+    io:println("🔧 Testing R2 connection and listing bucket contents...");
+    io:println("🔧 R2 Config - Bucket: " + r2BucketName + ", Endpoint: " + r2Endpoint);
+    io:println("🔧 R2 Config - Access Key ID: " + r2AccessKeyId.substring(0, 8) + "...");
+    io:println("🔧 R2 Config - Region: us-east-1");
+    
+    // Test basic R2 connection with error handling
+    s3:S3Object[]|error listResult = r2Client->listObjects(r2BucketName);
+    
+    if listResult is error {
+        io:println("❌ R2 connection failed: " + listResult.message());
+        io:println("❌ Error details: " + listResult.toString());
+        
+        // Try to provide more specific debugging info
+        string debugInfo = "R2 Connection Debug:\n";
+        debugInfo += "- Bucket: " + r2BucketName + "\n";
+        debugInfo += "- Endpoint: " + r2Endpoint + "\n";
+        debugInfo += "- Access Key: " + r2AccessKeyId.substring(0, 8) + "...\n";
+        debugInfo += "- Error: " + listResult.message() + "\n";
+        debugInfo += "- Full Error: " + listResult.toString() + "\n";
+        
+        return debugInfo;
+    }
+    
+    io:println("✅ R2 connection successful!");
+    io:println("📋 Found " + listResult.length().toString() + " objects in bucket");
+    
+    string result = "R2 Bucket Contents:\n";
+    result += "Bucket: " + r2BucketName + "\n";
+    result += "Endpoint: " + r2Endpoint + "\n";
+    result += "Objects found: " + listResult.length().toString() + "\n\n";
+    
+    foreach s3:S3Object obj in listResult {
+        string objName = obj.objectName ?: "unknown";
+        string objSize = obj.objectSize ?: "unknown";
+        result += "- " + objName + " (size: " + objSize + ")\n";
+        io:println("📄 Object: " + objName + " (size: " + objSize + ")");
+    }
+    
+    return result;
 }

@@ -71,6 +71,7 @@ public type SearchLostItemsRequest record {|
     string? keyword; // search in item name and description
     string? dateFrom;
     string? dateTo;
+    string? reporterEmail; // search by reporter email
     int? 'limit;
     int? offset;
 |};
@@ -154,6 +155,11 @@ public function getLostItems(mongodb:Database db, SearchLostItemsRequest? search
         // Filter by state
         if searchParams.state is string {
             filter["lostLocation.state"] = searchParams.state;
+        }
+        
+        // Filter by reporter email
+        if searchParams.reporterEmail is string {
+            filter["reporterEmail"] = searchParams.reporterEmail;
         }
         
         // Filter by date range
