@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import type { FormEvent } from 'react'
 import { useAuth } from '../context/AuthContext'
 
 interface LostItem {
@@ -32,8 +33,8 @@ interface RegisteredUser {
   firstName?: string
   lastName?: string
   picURL?: string
-  createdAt: string | number[]  // Handle both formats
-  passwordHash?: string  // This shouldn't be in response but handle if present
+  createdAt: string | number[]
+  passwordHash?: string
 }
 
 const Dashboard = () => {
@@ -44,7 +45,7 @@ const Dashboard = () => {
   const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
 
-  // Function to fetch all registered users
+  // Fetch registered users when Users tab is active
   const fetchUsers = async () => {
     setLoadingUsers(true)
     try {
@@ -62,14 +63,11 @@ const Dashboard = () => {
     }
   }
 
-  // Fetch users when Users tab is selected
   useEffect(() => {
-    if (activeTab === 'users') {
-      fetchUsers()
-    }
+    if (activeTab === 'users') fetchUsers()
   }, [activeTab])
 
-  // Dummy data for the feed
+  // Sample static feed items
   const feedItems: LostItem[] = [
     {
       id: '1',
@@ -100,216 +98,173 @@ const Dashboard = () => {
       userName: 'Mike Johnson',
       timeAgo: '4 hours ago'
     },
-    {
-      id: '3',
-      title: 'Found: Blue Backpack',
-      description: 'Found a blue backpack with textbooks near the university library.',
-      category: 'Bags',
-      location: 'University Library',
-      date: '2025-08-18',
-      status: 'found',
-      contactInfo: 'Contact to claim',
-      userId: '1',
-      userAvatar: '👨‍💼',
-      userName: 'John Doe',
-      timeAgo: '1 day ago'
-    },
-    {
-      id: '4',
-      title: 'Car Keys with BMW Keychain',
-      description: 'Set of car keys with BMW keychain and house keys attached.',
-      category: 'Keys',
-      location: 'Mall Parking Lot',
-      date: '2025-08-18',
-      status: 'lost',
-      contactInfo: 'Reward offered',
-      reward: 50,
-      userId: '2',
-      userAvatar: '👩‍💼',
-      userName: 'Sarah Smith',
-      timeAgo: '1 day ago'
-    }
   ]
-
   const myItems = feedItems.filter(item => item.userId === user?.id)
-
   const categories = ['Electronics', 'Personal Items', 'Bags', 'Keys', 'Jewelry', 'Clothing', 'Documents', 'Other']
 
-  // Helper function to format date from API response
   const formatDate = (dateValue: string | number[]) => {
     if (Array.isArray(dateValue)) {
-      // Handle Ballerina timestamp format [seconds, nanoseconds]
-      const timestamp = dateValue[0] * 1000; // Convert to milliseconds
-      return new Date(timestamp);
+      const timestamp = dateValue[0] * 1000
+      return new Date(timestamp)
     } else {
-      // Handle regular date string
-      return new Date(dateValue);
+      return new Date(dateValue)
     }
   }
 
-  const ReportModal = () => (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-800">
-            Report {reportType === 'lost' ? 'Lost' : 'Found'} Item
-          </h2>
-          <button 
-            onClick={() => setShowReportModal(false)}
-            className="text-gray-400 hover:text-gray-600 text-2xl"
-          >
-            ✕
-          </button>
-        </div>
+  // Modal for reporting lost/found items. 'found' submission implemented.
+  const ReportModal = () => {
+    const [itemName, setItemName] = useState('')
+    const [category, setCategory] = useState(categories[0])
+    const [description, setDescription] = useState('')
+    const [location, setLocation] = useState('')
+    const [foundDate, setFoundDate] = useState('')
+    const [additionalNotes, setAdditionalNotes] = useState('')
+    const [isSubmitting, setIsSubmitting] = useState(false)
 
-        <div className="flex gap-4 mb-6">
-          <button
-            onClick={() => setReportType('lost')}
-            className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors ${
-              reportType === 'lost' 
-                ? 'bg-red-500 text-white' 
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            📢 Report Lost Item
-          </button>
-          <button
-            onClick={() => setReportType('found')}
-            className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors ${
-              reportType === 'found' 
-                ? 'bg-green-500 text-white' 
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            ✅ Report Found Item
-          </button>
-        </div>
+    const handleSubmit = async (event: FormEvent) => {
+      event.preventDefault()
 
-        <form className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Item Title *
-            </label>
-            <input
-              type="text"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              placeholder="e.g., iPhone 13, Brown Wallet, Blue Backpack"
-              required
-            />
+      if (reportType !== 'found') {
+        alert("'Report Lost Item' functionality is not yet implemented.")
+        return
+      }
+
+      if (!user) {
+        alert('You must be logged in to report an item.')
+        return
+      }
+
+      setIsSubmitting(true)
+
+      const payload = {
+        finderEmail: user.email,
+        finderName: user.name || 'Anonymous',
+        finderPhone: user.phoneNumber || '',
+        itemName,
+        itemDescription: description,
+        category,
+        foundDate: new Date(foundDate).toISOString(),
+        foundLocation: {
+          address: location,
+          city: '',
+          state: '',
+          country: '',
+          latitude: 0.0,
+          longitude: 0.0,
+        },
+        additionalNotes,
+      }
+
+      try {
+        const response = await fetch('http://localhost:8080/founditems', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+
+        const result = await response.json()
+        if (response.ok && result.status === 'success') {
+          alert('Thank you! Your found item report has been submitted.')
+          setShowReportModal(false)
+        } else {
+          alert(`Error: ${result.message || 'Failed to submit report.'}`)
+        }
+      } catch (error) {
+        console.error('Submission error:', error)
+        alert('An error occurred while submitting the report. Please try again.')
+      } finally {
+        setIsSubmitting(false)
+      }
+    }
+
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-800">Report {reportType === 'lost' ? 'Lost' : 'Found'} Item</h2>
+            <button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">✕</button>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Category *
-            </label>
-            <select className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
-              {categories.map(category => (
-                <option key={category} value={category}>{category}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Description *
-            </label>
-            <textarea
-              rows={4}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              placeholder={`Describe the item in detail. Include color, brand, distinctive features, etc.`}
-              required
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Location *
-              </label>
-              <input
-                type="text"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                placeholder="Where was it lost/found?"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Date *
-              </label>
-              <input
-                type="date"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                required
-              />
-            </div>
-          </div>
-
-          {reportType === 'lost' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Reward (Optional)
-              </label>
-              <input
-                type="number"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                placeholder="Enter reward amount if any"
-                min="0"
-              />
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Contact Information
-            </label>
-            <textarea
-              rows={2}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              placeholder="How should people contact you? (Your email will be shared automatically)"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Upload Image (Optional)
-            </label>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-primary-500 transition-colors">
-              <div className="text-4xl mb-4">📷</div>
-              <p className="text-gray-600 mb-2">Click to upload or drag and drop</p>
-              <p className="text-sm text-gray-500">PNG, JPG up to 10MB</p>
-              <input type="file" className="hidden" accept="image/*" />
-            </div>
-          </div>
-
-          <div className="flex gap-4">
-            <button
-              type="button"
-              onClick={() => setShowReportModal(false)}
-              className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Cancel
+          <div className="flex gap-4 mb-6">
+            <button onClick={() => setReportType('lost')} className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors ${reportType === 'lost' ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+              📢 Report Lost Item
             </button>
-            <button
-              type="submit"
-              className={`flex-1 px-6 py-3 rounded-lg text-white font-medium transition-colors ${
-                reportType === 'lost' 
-                  ? 'bg-red-500 hover:bg-red-600' 
-                  : 'bg-green-500 hover:bg-green-600'
-              }`}
-            >
-              Submit Report
+            <button onClick={() => setReportType('found')} className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors ${reportType === 'found' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+              ✅ Report Found Item
             </button>
           </div>
-        </form>
+
+          <form className="space-y-6" onSubmit={handleSubmit}>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Item Title *</label>
+              <input type="text" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" placeholder="e.g., iPhone 13, Brown Wallet, Blue Backpack" value={itemName} onChange={(e) => setItemName(e.target.value)} required />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
+              <select className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" value={category} onChange={(e) => setCategory(e.target.value)}>
+                {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Description *</label>
+              <textarea rows={4} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" placeholder="Describe the item in detail. Include color, brand, distinctive features, etc." value={description} onChange={(e) => setDescription(e.target.value)} required />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Location *</label>
+                <input type="text" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" placeholder="Where was it found?" value={location} onChange={(e) => setLocation(e.target.value)} required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Date *</label>
+                <input type="date" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" value={foundDate} onChange={(e) => setFoundDate(e.target.value)} required />
+              </div>
+            </div>
+
+            {reportType === 'found' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Additional Notes (Optional)</label>
+                <textarea rows={2} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" placeholder="Any other details?" value={additionalNotes} onChange={(e) => setAdditionalNotes(e.target.value)} />
+              </div>
+            )}
+
+            {reportType === 'lost' && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Reward (Optional)</label>
+                  <input type="number" className="w-full px-4 py-3 border border-gray-300 rounded-lg" placeholder="Enter reward amount if any" min="0" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Contact Information</label>
+                  <textarea rows={2} className="w-full px-4 py-3 border border-gray-300 rounded-lg" placeholder="How should people contact you? (Your email will be shared automatically)" />
+                </div>
+              </>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Upload Image (Optional)</label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-primary-500 transition-colors">
+                <div className="text-4xl mb-4">📷</div>
+                <p className="text-gray-600 mb-2">Click to upload or drag and drop</p>
+                <p className="text-sm text-gray-500">PNG, JPG up to 10MB</p>
+                <input type="file" className="hidden" accept="image/*" />
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <button type="button" onClick={() => setShowReportModal(false)} className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+              <button type="submit" disabled={isSubmitting} className={`flex-1 px-6 py-3 rounded-lg text-white font-medium transition-colors ${reportType === 'lost' ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'} disabled:opacity-50`}>{isSubmitting ? 'Submitting...' : 'Submit Report'}</button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Dashboard Header */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-6xl mx-auto px-8 py-6">
           <div className="flex justify-between items-center">
@@ -325,7 +280,6 @@ const Dashboard = () => {
             </button>
           </div>
 
-          {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-8">
             <div className="bg-blue-50 p-6 rounded-xl">
               <div className="flex items-center">
@@ -367,45 +321,34 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Dashboard Content */}
       <div className="max-w-6xl mx-auto px-8 py-8">
-        {/* Tab Navigation */}
         <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg mb-8">
           <button
             onClick={() => setActiveTab('feed')}
-            className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors ${
-              activeTab === 'feed' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-600'
-            }`}
+            className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors ${activeTab === 'feed' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-600'}`}
           >
             🌟 Community Feed
           </button>
           <button
             onClick={() => setActiveTab('my-items')}
-            className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors ${
-              activeTab === 'my-items' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-600'
-            }`}
+            className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors ${activeTab === 'my-items' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-600'}`}
           >
             📋 My Items ({myItems.length})
           </button>
           <button
             onClick={() => setActiveTab('users')}
-            className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors ${
-              activeTab === 'users' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-600'
-            }`}
+            className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors ${activeTab === 'users' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-600'}`}
           >
             👥 Users ({registeredUsers.length})
           </button>
           <button
             onClick={() => setActiveTab('reports')}
-            className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors ${
-              activeTab === 'reports' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-600'
-            }`}
+            className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors ${activeTab === 'reports' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-600'}`}
           >
             📊 Analytics
           </button>
         </div>
 
-        {/* Tab Content */}
         {activeTab === 'feed' && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -436,13 +379,7 @@ const Dashboard = () => {
                         <div className="text-sm text-gray-500">{item.timeAgo}</div>
                       </div>
                     </div>
-                    <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      item.status === 'lost' 
-                        ? 'bg-red-100 text-red-600' 
-                        : item.status === 'found'
-                        ? 'bg-green-100 text-green-600'
-                        : 'bg-blue-100 text-blue-600'
-                    }`}>
+                    <div className={`px-3 py-1 rounded-full text-sm font-medium ${item.status === 'lost' ? 'bg-red-100 text-red-600' : item.status === 'found' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
                       {item.status === 'lost' ? '📢 Lost' : item.status === 'found' ? '✅ Found' : '🎉 Resolved'}
                     </div>
                   </div>
@@ -468,15 +405,9 @@ const Dashboard = () => {
                   </div>
 
                   <div className="flex gap-3">
-                    <button className="flex-1 bg-primary-500 text-white py-2 px-4 rounded-lg hover:bg-primary-600 transition-colors">
-                      💬 Contact Owner
-                    </button>
-                    <button className="bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors">
-                      📤 Share
-                    </button>
-                    <button className="bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors">
-                      🔖 Save
-                    </button>
+                    <button className="flex-1 bg-primary-500 text-white py-2 px-4 rounded-lg hover:bg-primary-600 transition-colors">💬 Contact Owner</button>
+                    <button className="bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors">📤 Share</button>
+                    <button className="bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors">🔖 Save</button>
                   </div>
                 </div>
               ))}
@@ -490,12 +421,7 @@ const Dashboard = () => {
               <div className="text-6xl mb-4">📋</div>
               <h3 className="text-xl font-semibold text-gray-800 mb-2">No Items Reported Yet</h3>
               <p className="text-gray-600 mb-6">Start by reporting a lost or found item</p>
-              <button
-                onClick={() => setShowReportModal(true)}
-                className="btn btn-primary"
-              >
-                Report Your First Item
-              </button>
+              <button onClick={() => setShowReportModal(true)} className="btn btn-primary">Report Your First Item</button>
             </div>
           </div>
         )}
@@ -504,13 +430,7 @@ const Dashboard = () => {
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-bold text-gray-800">Registered Users</h2>
-              <button
-                onClick={fetchUsers}
-                disabled={loadingUsers}
-                className="bg-primary-500 text-white px-4 py-2 rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50"
-              >
-                {loadingUsers ? '🔄 Loading...' : '🔄 Refresh'}
-              </button>
+              <button onClick={fetchUsers} disabled={loadingUsers} className="bg-primary-500 text-white px-4 py-2 rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50">{loadingUsers ? '🔄 Loading...' : '🔄 Refresh'}</button>
             </div>
 
             {loadingUsers ? (
@@ -542,16 +462,10 @@ const Dashboard = () => {
                           <td className="py-4 px-4">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-full bg-gradient-to-r from-primary-500 to-secondary-500 flex items-center justify-center text-white font-semibold">
-                                {registeredUser.firstName && registeredUser.lastName 
-                                  ? `${registeredUser.firstName[0]}${registeredUser.lastName[0]}`.toUpperCase()
-                                  : registeredUser.email[0].toUpperCase()}
+                                {registeredUser.firstName && registeredUser.lastName ? `${registeredUser.firstName[0]}${registeredUser.lastName[0]}`.toUpperCase() : registeredUser.email[0].toUpperCase()}
                               </div>
                               <div>
-                                <div className="font-semibold text-gray-800">
-                                  {registeredUser.firstName && registeredUser.lastName 
-                                    ? `${registeredUser.firstName} ${registeredUser.lastName}`.trim()
-                                    : registeredUser.firstName || 'Anonymous User'}
-                                </div>
+                                <div className="font-semibold text-gray-800">{registeredUser.firstName && registeredUser.lastName ? `${registeredUser.firstName} ${registeredUser.lastName}`.trim() : registeredUser.firstName || 'Anonymous User'}</div>
                                 <div className="text-sm text-gray-600">{registeredUser.email}</div>
                               </div>
                             </div>
@@ -560,20 +474,12 @@ const Dashboard = () => {
                             <div className="text-gray-800">{registeredUser.phoneNumber}</div>
                           </td>
                           <td className="py-4 px-4">
-                            <div className="text-gray-800">
-                              {registeredUser.address.city}, {registeredUser.address.country}
-                            </div>
-                            <div className="text-sm text-gray-600">
-                              {registeredUser.address.address}
-                            </div>
+                            <div className="text-gray-800">{registeredUser.address.city}, {registeredUser.address.country}</div>
+                            <div className="text-sm text-gray-600">{registeredUser.address.address}</div>
                           </td>
                           <td className="py-4 px-4">
-                            <div className="text-gray-800">
-                              {formatDate(registeredUser.createdAt).toLocaleDateString()}
-                            </div>
-                            <div className="text-sm text-gray-600">
-                              {formatDate(registeredUser.createdAt).toLocaleTimeString()}
-                            </div>
+                            <div className="text-gray-800">{formatDate(registeredUser.createdAt).toLocaleDateString()}</div>
+                            <div className="text-sm text-gray-600">{formatDate(registeredUser.createdAt).toLocaleTimeString()}</div>
                           </td>
                         </tr>
                       ))}
@@ -595,6 +501,7 @@ const Dashboard = () => {
             </div>
           </div>
         )}
+
       </div>
 
       {showReportModal && <ReportModal />}
