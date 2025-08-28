@@ -2,23 +2,11 @@ import ballerina/io;
 import ballerina/uuid;
 import ballerina/time;
 import ballerina/regex;
-import ballerinax/aws.s3;
+import ballerina/file;
 
-// Configuration for Cloudflare R2 (S3 compatible)
-configurable string r2AccessKeyId = ?;
-configurable string r2SecretAccessKey = ?;
-configurable string r2BucketName = ?;
-configurable string r2Endpoint = ?;
-
-// AWS S3 client configuration for Cloudflare R2
-s3:ConnectionConfig r2Config = {
-    accessKeyId: r2AccessKeyId,
-    secretAccessKey: r2SecretAccessKey,
-    region: "us-east-1" // Use standard region for compatibility
-};
-
-// Initialize S3 client
-s3:Client r2Client = check new (r2Config);
+// Configuration for local file storage
+configurable string localStoragePath = "./uploads";
+configurable string baseUrl = "http://localhost:8080";
 
 // Define supported content types
 final readonly & map<string> contentTypes = {
@@ -51,8 +39,7 @@ public type FileMetadata record {|
     int fileSize;
     string uploadedBy;
     string uploadTimestamp;
-    string bucketName;
-    string s3Key;
+    string localPath;
 |};
 
 // Upload response type
@@ -63,6 +50,16 @@ public type UploadResponse record {|
     string fileUrl;
     FileMetadata metadata;
 |};
+
+// Helper function to ensure directory exists
+function ensureDirectoryExists(string dirPath) returns error? {
+    // Try to read the directory, if it fails, create it
+    file:MetaData[]|error dirCheck = file:readDir(dirPath);
+    if dirCheck is error {
+        // Directory doesn't exist, create it
+        check file:createDir(dirPath, file:RECURSIVE);
+    }
+}
 
 // Helper function to get file extension
 function getFileExtension(string fileName) returns string {
@@ -87,171 +84,247 @@ public function isValidFileType(string fileName) returns boolean {
     return contentTypes.hasKey(extension);
 }
 
-// Upload file to Cloudflare R2 (with local fallback)
+// Upload file to local storage
 public function uploadFile(byte[] fileContent, string fileName, string contentType, string uploadedBy) returns UploadResponse|error {
-    // Generate unique file ID and S3 key
+    // Generate unique file ID and local path
     string fileId = uuid:createType1AsString();
     string timestamp = time:utcNow()[0].toString();
     string fileExtension = getFileExtension(fileName);
-    string s3Key = string `uploads/${uploadedBy}/${timestamp}/${fileId}${fileExtension}`;
     
-    io:println("📤 Uploading file: " + fileName + " with key: " + s3Key);
+    io:println("📤 Uploading file: " + fileName + " for user: " + uploadedBy);
     
     // Validate file type
     if !isValidFileType(fileName) {
         return error("Unsupported file type: " + fileName);
     }
     
-    // For now, use local file storage as R2 connection is not working
-    // TODO: Fix R2 connection and switch back to cloud storage
-    io:println("⚠️  Using local file storage (R2 connection issue)");
+    // Create directory structure: uploads/userId/timestamp/
+    string userDir = localStoragePath + "/" + uploadedBy + "/" + timestamp;
+    check ensureDirectoryExists(userDir);
+    
+    // Create full file path
+    string localFileName = fileId + fileExtension;
+    string localPath = userDir + "/" + localFileName;
+    
+    // Write file to local storage
+    check io:fileWriteBytes(localPath, fileContent);
     
     // Create file metadata
     FileMetadata metadata = {
         fileId: fileId,
         originalFileName: fileName,
-        fileUrl: string `http://localhost:8080/files/${fileId}/download`,
+        fileUrl: string `${baseUrl}/files/${fileId}/download`,
         contentType: contentType,
         fileSize: fileContent.length(),
         uploadedBy: uploadedBy,
         uploadTimestamp: timestamp,
-        bucketName: "local-storage",
-        s3Key: s3Key
+        localPath: localPath
     };
     
     UploadResponse response = {
         status: "success",
-        message: "File uploaded successfully (local storage)",
+        message: "File uploaded successfully to local storage",
         fileId: fileId,
         fileUrl: metadata.fileUrl,
         metadata: metadata
     };
     
-    io:println("✅ File upload simulated successfully: " + fileId);
+    io:println("✅ File uploaded successfully: " + fileId + " at " + localPath);
     return response;
 }
 
-// Download file (with local fallback)
-public function downloadFile(string s3Key) returns byte[]|error {
-    io:println("📥 Downloading file: " + s3Key);
+// Download file from local storage by fileId
+public function downloadFile(string fileId) returns byte[]|error {
+    io:println("📥 Downloading file: " + fileId);
     
-    // For now, return dummy content since we're using local storage
-    // TODO: Implement actual file retrieval when R2 is working
-    io:println("⚠️  Using local file storage (R2 connection issue)");
+    // Find the file by searching through user directories
+    FileMetadata|error metadata = getFileMetadataById(fileId);
+    if metadata is error {
+        return error("File not found: " + fileId);
+    }
     
-    string dummyContent = "File content for: " + s3Key + "\n\nThis is a placeholder until R2 connection is fixed.";
-    byte[] fileContent = dummyContent.toBytes();
+    // Read file from local storage
+    byte[]|error fileContent = io:fileReadBytes(metadata.localPath);
+    if fileContent is error {
+        return error("Failed to read file: " + fileContent.message());
+    }
     
-    io:println("✅ File download simulated: " + s3Key);
+    io:println("✅ File downloaded successfully: " + fileId);
     return fileContent;
 }
 
-// Delete file from Cloudflare R2
-public function deleteFile(string s3Key) returns error? {
-    io:println("🗑️ Deleting file from R2: " + s3Key);
-    
-    error? deleteResult = r2Client->deleteObject(r2BucketName, s3Key);
-    
-    if deleteResult is error {
-        io:println("❌ R2 delete failed: " + deleteResult.message());
-        return error("Failed to delete file from R2: " + deleteResult.message());
+// Helper function to find file metadata by fileId
+function getFileMetadataById(string fileId) returns FileMetadata|error {
+    // Search through all user directories to find the file
+    file:MetaData[]|error entries = file:readDir(localStoragePath);
+    if entries is error {
+        return error("Failed to read uploads directory: " + entries.message());
     }
     
-    io:println("✅ File deleted successfully from R2: " + s3Key);
-    return;
-}
-
-// Get file metadata from Cloudflare R2
-public function getFileMetadata(string s3Key) returns FileMetadata|error {
-    io:println("ℹ️ Getting file metadata from R2: " + s3Key);
-    
-    // For R2, we can try to get object info or construct metadata from the key
-    // Since R2 doesn't have direct metadata API, we'll construct it from the key
-    string[] keyParts = regex:split(s3Key, "/");
-    if keyParts.length() < 4 {
-        return error("Invalid S3 key format: " + s3Key);
-    }
-    
-    string uploadedBy = keyParts[1];
-    string timestamp = keyParts[2];
-    string fileIdWithExt = keyParts[3];
-    
-    // Extract file ID and extension
-    string[] fileParts = regex:split(fileIdWithExt, "\\.");
-    string fileId = fileParts.length() > 1 ? fileParts[0] : fileIdWithExt;
-    string extension = fileParts.length() > 1 ? "." + fileParts[1] : "";
-    
-    FileMetadata metadata = {
-        fileId: fileId,
-        originalFileName: "file" + extension,
-        fileUrl: string `${r2Endpoint}/${s3Key}`,
-        contentType: getContentType("file" + extension),
-        fileSize: 0, // Would need separate call to get actual size
-        uploadedBy: uploadedBy,
-        uploadTimestamp: timestamp,
-        bucketName: r2BucketName,
-        s3Key: s3Key
-    };
-    
-    io:println("✅ File metadata retrieved from R2: " + s3Key);
-    return metadata;
-}
-
-// List files for user from Cloudflare R2
-public function listUserFiles(string userId) returns FileMetadata[]|error {
-    io:println("📋 Listing files from R2 for user: " + userId);
-    
-    string prefix = string `uploads/${userId}/`;
-    s3:S3Object[]|error listResult = r2Client->listObjects(r2BucketName, prefix = prefix);
-    
-    if listResult is error {
-        io:println("❌ R2 list failed: " + listResult.message());
-        return error("Failed to list files from R2: " + listResult.message());
-    }
-    
-    FileMetadata[] files = [];
-    foreach s3:S3Object obj in listResult {
-        string s3Key = obj.objectName ?: "";
-        if s3Key != "" {
-            FileMetadata|error metadata = getFileMetadata(s3Key);
+    foreach file:MetaData entry in entries {
+        if entry.dir {
+            // This is a user directory
+            string userDir = entry.absPath;
+            FileMetadata|error metadata = searchFileInUserDir(userDir, fileId);
             if metadata is FileMetadata {
-                // Get file size from S3 object with proper null handling
-                int fileSize = 0;
-                string? objSize = obj.objectSize;
-                if objSize is string {
-                    int|error sizeResult = int:fromString(objSize);
-                    fileSize = sizeResult is int ? sizeResult : 0;
-                }
-                
-                // Create a new metadata record with the actual file size from S3
-                FileMetadata updatedMetadata = {
-                    fileId: metadata.fileId,
-                    originalFileName: metadata.originalFileName,
-                    fileUrl: metadata.fileUrl,
-                    contentType: metadata.contentType,
-                    fileSize: fileSize,
-                    uploadedBy: metadata.uploadedBy,
-                    uploadTimestamp: metadata.uploadTimestamp,
-                    bucketName: metadata.bucketName,
-                    s3Key: metadata.s3Key
-                };
-                files.push(updatedMetadata);
+                return metadata;
             }
         }
     }
     
-    io:println(string `✅ Listed ${files.length()} files from R2 for user: ${userId}`);
+    return error("File not found: " + fileId);
+}
+
+// Helper function to search for file in user directory
+function searchFileInUserDir(string userDir, string fileId) returns FileMetadata|error {
+    file:MetaData[]|error timestampDirs = file:readDir(userDir);
+    if timestampDirs is error {
+        return error("Failed to read user directory: " + timestampDirs.message());
+    }
+    
+    foreach file:MetaData timestampDir in timestampDirs {
+        if timestampDir.dir {
+            file:MetaData[]|error files = file:readDir(timestampDir.absPath);
+            if files is error {
+                continue;
+            }
+            
+            foreach file:MetaData fileEntry in files {
+                if !fileEntry.dir {
+                    string[] pathSegments = regex:split(fileEntry.absPath, "/");
+                    string fileName = pathSegments[pathSegments.length() - 1];
+                    if fileName.startsWith(fileId) {
+                        // Extract metadata from path structure
+                        string[] pathParts = regex:split(timestampDir.absPath, "/");
+                        string uploadedBy = pathParts[pathParts.length() - 2];
+                        string timestamp = pathParts[pathParts.length() - 1];
+                        
+                        // Get file extension from filename
+                        string[] nameParts = regex:split(fileName, "\\.");
+                        string extension = nameParts.length() > 1 ? "." + nameParts[1] : "";
+                        
+                        FileMetadata metadata = {
+                            fileId: fileId,
+                            originalFileName: "file" + extension,
+                            fileUrl: string `${baseUrl}/files/${fileId}/download`,
+                            contentType: getContentType("file" + extension),
+                            fileSize: fileEntry.size,
+                            uploadedBy: uploadedBy,
+                            uploadTimestamp: timestamp,
+                            localPath: fileEntry.absPath
+                        };
+                        
+                        return metadata;
+                    }
+                }
+            }
+        }
+    }
+    
+    return error("File not found in user directory");
+}
+
+// Delete file from local storage
+public function deleteFile(string fileId) returns error? {
+    io:println("🗑️ Deleting file from local storage: " + fileId);
+    
+    // Find the file metadata first
+    FileMetadata|error metadata = getFileMetadataById(fileId);
+    if metadata is error {
+        return error("File not found: " + fileId);
+    }
+    
+    // Delete the file from local storage
+    error? deleteResult = file:remove(metadata.localPath);
+    if deleteResult is error {
+        return error("Failed to delete file: " + deleteResult.message());
+    }
+    
+    io:println("✅ File deleted successfully from local storage: " + fileId);
+    return;
+}
+
+// Get file metadata from local storage
+public function getFileMetadata(string fileId) returns FileMetadata|error {
+    io:println("ℹ️ Getting file metadata from local storage: " + fileId);
+    
+    // Use the existing helper function to find metadata
+    FileMetadata|error metadata = getFileMetadataById(fileId);
+    if metadata is error {
+        return error("File metadata not found: " + fileId);
+    }
+    
+    io:println("✅ File metadata retrieved from local storage: " + fileId);
+    return metadata;
+}
+
+// List files for user from local storage
+public function listUserFiles(string userId) returns FileMetadata[]|error {
+    io:println("📋 Listing files from local storage for user: " + userId);
+    
+    string userDir = localStoragePath + "/" + userId;
+    
+    // Try to read user directory, if it fails, return empty array
+    file:MetaData[]|error timestampDirs = file:readDir(userDir);
+    if timestampDirs is error {
+        io:println("✅ No files found for user: " + userId);
+        return [];
+    }
+    
+    FileMetadata[] files = [];
+    
+    foreach file:MetaData timestampDir in timestampDirs {
+        if timestampDir.dir {
+            // Read files in timestamp directory
+            file:MetaData[]|error fileEntries = file:readDir(timestampDir.absPath);
+            if fileEntries is error {
+                continue;
+            }
+            
+            foreach file:MetaData fileEntry in fileEntries {
+                if !fileEntry.dir {
+                    // Extract file information
+                    string[] pathSegments = regex:split(fileEntry.absPath, "/");
+                    string fileName = pathSegments[pathSegments.length() - 1];
+                    
+                    // Extract fileId and extension from filename
+                    string[] nameParts = regex:split(fileName, "\\.");
+                    string fileId = nameParts[0];
+                    string extension = nameParts.length() > 1 ? "." + nameParts[1] : "";
+                    
+                    // Extract timestamp from path
+                    string[] timestampPathSegments = regex:split(timestampDir.absPath, "/");
+                    string timestamp = timestampPathSegments[timestampPathSegments.length() - 1];
+                    
+                    FileMetadata metadata = {
+                        fileId: fileId,
+                        originalFileName: "file" + extension,
+                        fileUrl: string `${baseUrl}/files/${fileId}/download`,
+                        contentType: getContentType("file" + extension),
+                        fileSize: fileEntry.size,
+                        uploadedBy: userId,
+                        uploadTimestamp: timestamp,
+                        localPath: fileEntry.absPath
+                    };
+                    
+                    files.push(metadata);
+                }
+            }
+        }
+    }
+    
+    io:println(string `✅ Listed ${files.length()} files from local storage for user: ${userId}`);
     return files;
 }
 
-// Generate signed URL for file access (Cloudflare R2)
-public function generateSignedUrl(string s3Key, int expirySeconds) returns string|error {
-    io:println("🔗 Generating signed URL for R2 file: " + s3Key);
+// Generate URL for file access (local storage)
+public function generateSignedUrl(string fileId, int expirySeconds) returns string|error {
+    io:println("🔗 Generating URL for local file: " + fileId);
     
-    // Note: For production use, you'd implement proper signed URL generation
-    // This is a simplified version - R2 supports S3-compatible signed URLs
-    string signedUrl = string `${r2Endpoint}/${s3Key}?expires=${expirySeconds}`;
+    // For local storage, we just return the direct download URL
+    // In a production environment, you might implement token-based access control
+    string fileUrl = string `${baseUrl}/files/${fileId}/download`;
     
-    io:println("✅ Signed URL generated for R2 file: " + s3Key);
-    return signedUrl;
+    io:println("✅ URL generated for local file: " + fileId);
+    return fileUrl;
 }

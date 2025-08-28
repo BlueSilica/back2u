@@ -120,42 +120,116 @@ const Dashboard = () => {
     const [foundDate, setFoundDate] = useState('')
     const [additionalNotes, setAdditionalNotes] = useState('')
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [selectedFile, setSelectedFile] = useState<File | null>(null)
+    const [isDragOver, setIsDragOver] = useState(false)
+
+    const handleFileSelect = (file: File) => {
+      if (file && file.type.startsWith('image/')) {
+        if (file.size <= 10 * 1024 * 1024) { // 10MB limit
+          setSelectedFile(file)
+        } else {
+          alert('File size must be less than 10MB')
+        }
+      } else {
+        alert('Please select an image file (PNG, JPG, etc.)')
+      }
+    }
+
+    const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0]
+      if (file) {
+        handleFileSelect(file)
+      }
+    }
+
+    const handleDragOver = (event: React.DragEvent) => {
+      event.preventDefault()
+      setIsDragOver(true)
+    }
+
+    const handleDragLeave = (event: React.DragEvent) => {
+      event.preventDefault()
+      setIsDragOver(false)
+    }
+
+    const handleDrop = (event: React.DragEvent) => {
+      event.preventDefault()
+      setIsDragOver(false)
+      const file = event.dataTransfer.files[0]
+      if (file) {
+        handleFileSelect(file)
+      }
+    }
+
+    const handleFileAreaClick = () => {
+      const fileInput = document.getElementById('file-input') as HTMLInputElement
+      fileInput?.click()
+    }
 
     const handleSubmit = async (event: FormEvent) => {
       event.preventDefault()
-
-      if (reportType !== 'found') {
-        alert("'Report Lost Item' functionality is not yet implemented.")
-        return
-      }
 
       if (!user) {
         alert('You must be logged in to report an item.')
         return
       }
 
-      setIsSubmitting(true)
-
-      const payload = {
-        finderEmail: user.email,
-        finderName: user.name || 'Anonymous',
-        finderPhone: user.phoneNumber || '',
-        itemName,
-        itemDescription: description,
-        category,
-        foundDate: new Date(foundDate).toISOString(),
-        foundLocation: {
-          address: location,
-          city: '',
-          state: '',
-          country: '',
-          latitude: 0.0,
-          longitude: 0.0,
-        },
-        additionalNotes,
+      if (reportType === 'lost') {
+        alert("'Report Lost Item' functionality is not yet implemented.")
+        return
       }
 
+      setIsSubmitting(true)
+
       try {
+        let imageUrl = ''
+        
+        // Upload image if selected
+        if (selectedFile) {
+          const formData = new FormData()
+          formData.append('file', selectedFile)
+          formData.append('category', 'found-item-images')
+          formData.append('uploadedBy', user.email)
+
+          try {
+            const uploadResponse = await fetch('http://localhost:8080/files', {
+              method: 'POST',
+              body: formData,
+            })
+
+            const uploadResult = await uploadResponse.json()
+            if (uploadResponse.ok && uploadResult.status === 'success') {
+              imageUrl = uploadResult.fileUrl
+            } else {
+              console.warn('Image upload failed:', uploadResult.message)
+              // Continue with submission even if image upload fails
+            }
+          } catch (uploadError) {
+            console.warn('Image upload error:', uploadError)
+            // Continue with submission even if image upload fails
+          }
+        }
+
+        const payload = {
+          finderEmail: user.email,
+          finderName: user.name || 'Anonymous',
+          finderPhone: user.phoneNumber || '',
+          itemName,
+          itemDescription: description,
+          category,
+          foundDate: foundDate, // Send as YYYY-MM-DD format
+          foundLocation: {
+            address: location,
+            city: '',
+            state: '',
+            country: '',
+            latitude: 0.0,
+            longitude: 0.0,
+          },
+          additionalNotes,
+          itemImages: imageUrl ? [imageUrl] : [], // Convert to array format
+        }
+
         const response = await fetch('http://localhost:8080/founditems', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -166,6 +240,13 @@ const Dashboard = () => {
         if (response.ok && result.status === 'success') {
           alert('Thank you! Your found item report has been submitted.')
           setShowReportModal(false)
+          // Reset form
+          setItemName('')
+          setDescription('')
+          setLocation('')
+          setFoundDate('')
+          setAdditionalNotes('')
+          setSelectedFile(null)
         } else {
           alert(`Error: ${result.message || 'Failed to submit report.'}`)
         }
@@ -245,11 +326,40 @@ const Dashboard = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Upload Image (Optional)</label>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-primary-500 transition-colors">
-                <div className="text-4xl mb-4">📷</div>
-                <p className="text-gray-600 mb-2">Click to upload or drag and drop</p>
-                <p className="text-sm text-gray-500">PNG, JPG up to 10MB</p>
-                <input type="file" className="hidden" accept="image/*" />
+              <div 
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
+                  isDragOver 
+                    ? 'border-primary-500 bg-primary-50' 
+                    : selectedFile 
+                      ? 'border-green-500 bg-green-50' 
+                      : 'border-gray-300 hover:border-primary-500'
+                }`}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={handleFileAreaClick}
+              >
+                <div className="text-4xl mb-4">
+                  {selectedFile ? '✅' : '📷'}
+                </div>
+                {selectedFile ? (
+                  <div>
+                    <p className="text-green-600 mb-2 font-medium">File selected: {selectedFile.name}</p>
+                    <p className="text-sm text-gray-500">Click to change or drag a new file</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-gray-600 mb-2">Click to upload or drag and drop</p>
+                    <p className="text-sm text-gray-500">PNG, JPG up to 10MB</p>
+                  </div>
+                )}
+                <input 
+                  id="file-input"
+                  type="file" 
+                  className="hidden" 
+                  accept="image/*"
+                  onChange={handleFileInputChange}
+                />
               </div>
             </div>
 
