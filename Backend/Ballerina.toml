@@ -1,5 +1,8 @@
-[Backend.file]
-r2AccessKeyId = "4bd09607842b8d8ce1d13ce517aacfb1"
-r2SecretAccessKey = "f636349ad5968c60db36bf31506b0d299c800b88991582d42d30b6c1962cc289"
-r2BucketName = "back2u"
-r2Endpoint = "https://67ed7bdab3fd8706347809322d8ffbf0.r2.cloudflarestorage.com"
+[package]
+org = "randitha"
+name = "Backend"
+version = "0.1.0"
+distribution = "2201.12.9"
+
+[build-options]
+observabilityIncluded = true

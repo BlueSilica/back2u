@@ -814,8 +814,7 @@ service / on new http:Listener(8080) {
                 "fileSize": uploadResult.metadata.fileSize,
                 "uploadedBy": uploadResult.metadata.uploadedBy,
                 "uploadTimestamp": uploadResult.metadata.uploadTimestamp,
-                "bucketName": uploadResult.metadata.bucketName,
-                "s3Key": uploadResult.metadata.s3Key,
+                "localPath": uploadResult.metadata.localPath,
                 "category": category,
                 "status": "active"
             };
@@ -841,6 +840,15 @@ service / on new http:Listener(8080) {
         }
     }
 
+    // Handle OPTIONS preflight requests for files endpoint
+    resource function options files() returns http:Response {
+        http:Response res = new;
+        res.setHeader("Access-Control-Allow-Origin", "http://localhost:5173");
+        res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+        return res;
+    }
+
     // Download file endpoint
     resource function get files/[string fileId]/download() returns http:Response|http:NotFound|http:InternalServerError|error {
         io:println("📥 Processing file download request for: " + fileId);
@@ -864,12 +872,11 @@ service / on new http:Listener(8080) {
         }
         
         map<json> fileRecord = files[0];
-        string s3Key = fileRecord.get("s3Key").toString();
         string fileName = fileRecord.get("originalFileName").toString();
         string contentType = fileRecord.get("contentType").toString();
         
-        // Download file from S3/R2
-        byte[]|error fileContent = file:downloadFile(s3Key);
+        // Download file from local storage using fileId
+        byte[]|error fileContent = file:downloadFile(fileId);
         if fileContent is error {
             io:println("❌ File download failed: " + fileContent.message());
             return http:INTERNAL_SERVER_ERROR;
@@ -1213,8 +1220,7 @@ service / on new http:Listener(8080) {
             "fileSize": uploadResult.metadata.fileSize,
             "uploadedBy": senderEmail,
             "uploadTimestamp": uploadResult.metadata.uploadTimestamp,
-            "bucketName": uploadResult.metadata.bucketName,
-            "s3Key": uploadResult.metadata.s3Key,
+            "localPath": uploadResult.metadata.localPath,
             "status": "active",
             "relatedMessageId": messageId,
             "chatRoomId": roomId
