@@ -111,7 +111,7 @@ const Dashboard = () => {
     }
   }
 
-  // Modal for reporting lost/found items. 'found' submission implemented.
+  // Modal for reporting lost/found items. Both 'lost' and 'found' submission implemented.
   const ReportModal = () => {
     const [itemName, setItemName] = useState('')
     const [category, setCategory] = useState(categories[0])
@@ -122,6 +122,10 @@ const Dashboard = () => {
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [selectedFile, setSelectedFile] = useState<File | null>(null)
     const [isDragOver, setIsDragOver] = useState(false)
+    
+    // Lost item specific fields
+    const [rewardAmount, setRewardAmount] = useState('')
+    const [contactInfo, setContactInfo] = useState('')
 
     const handleFileSelect = (file: File) => {
       if (file && file.type.startsWith('image/')) {
@@ -174,11 +178,6 @@ const Dashboard = () => {
         return
       }
 
-      if (reportType === 'lost') {
-        alert("'Report Lost Item' functionality is not yet implemented.")
-        return
-      }
-
       setIsSubmitting(true)
 
       try {
@@ -188,7 +187,7 @@ const Dashboard = () => {
         if (selectedFile) {
           const formData = new FormData()
           formData.append('file', selectedFile)
-          formData.append('category', 'found-item-images')
+          formData.append('category', reportType === 'lost' ? 'lost-item-images' : 'found-item-images')
           formData.append('uploadedBy', user.email)
 
           try {
@@ -210,27 +209,65 @@ const Dashboard = () => {
           }
         }
 
-        const payload = {
-          finderEmail: user.email,
-          finderName: user.name || 'Anonymous',
-          finderPhone: user.phoneNumber || '',
-          itemName,
-          itemDescription: description,
-          category,
-          foundDate: foundDate, // Send as YYYY-MM-DD format
-          foundLocation: {
-            address: location,
-            city: '',
-            state: '',
-            country: '',
-            latitude: 0.0,
-            longitude: 0.0,
-          },
-          additionalNotes,
-          itemImages: imageUrl ? [imageUrl] : [], // Convert to array format
+        let payload: Record<string, unknown> = {}
+        let endpoint = ''
+        let successMessage = ''
+
+        if (reportType === 'lost') {
+          // Lost item payload
+          payload = {
+            reporterEmail: user.email,
+            reporterName: user.name || 'Anonymous',
+            reporterPhone: user.phoneNumber || '',
+            itemName,
+            itemDescription: description,
+            category,
+            lostDate: foundDate, // Using foundDate field for lost date
+            lostLocation: {
+              address: location,
+              city: '',
+              state: '',
+              country: '',
+              latitude: 0.0,
+              longitude: 0.0,
+            },
+            additionalNotes: contactInfo || additionalNotes,
+            itemImages: imageUrl ? [imageUrl] : [],
+            contactPrefs: {
+              allowEmail: true,
+              allowPhone: true,
+              allowChat: true,
+              preferredContactTime: 'anytime'
+            }
+          }
+          endpoint = 'http://localhost:8080/lostitems'
+          successMessage = 'Thank you! Your lost item report has been submitted.'
+        } else {
+          // Found item payload
+          payload = {
+            finderEmail: user.email,
+            finderName: user.name || 'Anonymous',
+            finderPhone: user.phoneNumber || '',
+            itemName,
+            itemDescription: description,
+            category,
+            foundDate: foundDate,
+            foundLocation: {
+              address: location,
+              city: '',
+              state: '',
+              country: '',
+              latitude: 0.0,
+              longitude: 0.0,
+            },
+            additionalNotes,
+            itemImages: imageUrl ? [imageUrl] : [],
+          }
+          endpoint = 'http://localhost:8080/founditems'
+          successMessage = 'Thank you! Your found item report has been submitted.'
         }
 
-        const response = await fetch('http://localhost:8080/founditems', {
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -238,7 +275,7 @@ const Dashboard = () => {
 
         const result = await response.json()
         if (response.ok && result.status === 'success') {
-          alert('Thank you! Your found item report has been submitted.')
+          alert(successMessage)
           setShowReportModal(false)
           // Reset form
           setItemName('')
@@ -247,6 +284,8 @@ const Dashboard = () => {
           setFoundDate('')
           setAdditionalNotes('')
           setSelectedFile(null)
+          setRewardAmount('')
+          setContactInfo('')
         } else {
           alert(`Error: ${result.message || 'Failed to submit report.'}`)
         }
@@ -296,11 +335,24 @@ const Dashboard = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Location *</label>
-                <input type="text" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" placeholder="Where was it found?" value={location} onChange={(e) => setLocation(e.target.value)} required />
+                <input 
+                  type="text" 
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" 
+                  placeholder={reportType === 'lost' ? "Where was it lost?" : "Where was it found?"} 
+                  value={location} 
+                  onChange={(e) => setLocation(e.target.value)} 
+                  required 
+                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Date *</label>
-                <input type="date" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" value={foundDate} onChange={(e) => setFoundDate(e.target.value)} required />
+                <label className="block text-sm font-medium text-gray-700 mb-2">{reportType === 'lost' ? 'Date Lost' : 'Date Found'} *</label>
+                <input 
+                  type="date" 
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" 
+                  value={foundDate} 
+                  onChange={(e) => setFoundDate(e.target.value)} 
+                  required 
+                />
               </div>
             </div>
 
@@ -314,12 +366,35 @@ const Dashboard = () => {
             {reportType === 'lost' && (
               <>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Additional Notes (Optional)</label>
+                  <textarea 
+                    rows={2} 
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" 
+                    placeholder="Any other details about the lost item?"
+                    value={additionalNotes}
+                    onChange={(e) => setAdditionalNotes(e.target.value)}
+                  />
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Reward (Optional)</label>
-                  <input type="number" className="w-full px-4 py-3 border border-gray-300 rounded-lg" placeholder="Enter reward amount if any" min="0" />
+                  <input 
+                    type="number" 
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" 
+                    placeholder="Enter reward amount if any" 
+                    min="0"
+                    value={rewardAmount}
+                    onChange={(e) => setRewardAmount(e.target.value)}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Contact Information</label>
-                  <textarea rows={2} className="w-full px-4 py-3 border border-gray-300 rounded-lg" placeholder="How should people contact you? (Your email will be shared automatically)" />
+                  <textarea 
+                    rows={2} 
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500" 
+                    placeholder="How should people contact you? (Your email will be shared automatically)"
+                    value={contactInfo}
+                    onChange={(e) => setContactInfo(e.target.value)}
+                  />
                 </div>
               </>
             )}
