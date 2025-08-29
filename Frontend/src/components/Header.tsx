@@ -121,7 +121,7 @@ const Header = ({ currentView = "home", onNavigate }: HeaderProps) => {
                         <FaUser />
                       )}
                     </span>
-                    <span className="hidden sm:inline text-sm text-gray-900 dark:text-white">
+                    <span className="hidden sm:inline text-sm text-gray-900">
                       {user.name}
                     </span>
                   </button>
