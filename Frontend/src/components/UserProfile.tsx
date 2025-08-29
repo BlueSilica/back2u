@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import Avatar from "./Avatar";
 
 interface Address {
   number: string;
@@ -155,9 +156,11 @@ const UserProfile = () => {
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-white text-2xl font-bold">
-                {user.avatar}
-              </div>
+              <Avatar 
+                src={user.avatar} 
+                alt={`${user.name}'s avatar`}
+                size="lg"
+              />
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">
                   {user.name}

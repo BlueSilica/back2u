@@ -84,7 +84,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             `${data.user.firstName || ""} ${data.user.lastName || ""}`.trim() ||
             "User",
           email: data.user.email,
-          avatar: "👤",
+          avatar: "/default-avatar.svg",
           joinedDate: joinedDate,
           itemsReported: 0,
           itemsReturned: 0,
@@ -189,7 +189,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             Date.now().toString(),
           name: name,
           email: responseData.user.email,
-          avatar: "🆕",
+          avatar: "/new-user-avatar.svg",
           joinedDate: joinedDate,
           itemsReported: 0,
           itemsReturned: 0,
