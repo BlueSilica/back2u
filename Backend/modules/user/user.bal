@@ -318,3 +318,120 @@ public function handleUserLogin(mongodb:Database db, LoginRequest loginRequest) 
     
     return response;
 }
+
+// Update user function
+public function updateUser(mongodb:Database db, string userId, UpdateUserRequest updateRequest) returns json|error {
+    // Get users collection
+    mongodb:Collection usersCollection = check db->getCollection("users");
+    
+    // Build update document with only non-null fields
+    map<json> updateDoc = {};
+    
+    if updateRequest.firstName is string {
+        updateDoc["firstName"] = updateRequest.firstName;
+    }
+    
+    if updateRequest.lastName is string {
+        updateDoc["lastName"] = updateRequest.lastName;
+    }
+    
+    if updateRequest.phoneNumber is string {
+        updateDoc["phoneNumber"] = updateRequest.phoneNumber;
+    }
+    
+    if updateRequest.address is Address {
+        // Convert Address record to JSON
+        Address addr = <Address>updateRequest.address;
+        json addressJson = {
+            "number": addr.number,
+            "address": addr.address,
+            "postalCode": addr.postalCode,
+            "city": addr.city,
+            "country": addr.country
+        };
+        updateDoc["address"] = addressJson;
+    }
+    
+    if updateRequest.picURL is string {
+        updateDoc["picURL"] = updateRequest.picURL;
+    }
+    
+    // Always update the updatedAt timestamp
+    updateDoc["updatedAt"] = time:utcNow();
+    
+    // Create filter for the user
+    map<json> filter = {"_id": {"$oid": userId}};
+    
+    // Perform the update
+    mongodb:UpdateResult updateResult = check usersCollection->updateOne(filter, {"$set": updateDoc});
+    
+    if updateResult.modifiedCount == 0 {
+        return {
+            "status": "error",
+            "message": "User not found or no changes made"
+        };
+    }
+    
+    // Fetch and return the updated user
+    stream<User, error?> findResult = check usersCollection->find(filter);
+    User[] users = check from User user in findResult select user;
+    
+    if users.length() == 0 {
+        return {
+            "status": "error",
+            "message": "User not found after update"
+        };
+    }
+    
+    User updatedUser = users[0];
+    
+    // Create response user object excluding password hash
+    json addressJson = {
+        "number": updatedUser.address.number,
+        "address": updatedUser.address.address,
+        "postalCode": updatedUser.address.postalCode,
+        "city": updatedUser.address.city,
+        "country": updatedUser.address.country
+    };
+    
+    json userResponse = {
+        "_id": updatedUser._id,
+        "email": updatedUser.email,
+        "phoneNumber": updatedUser.phoneNumber,
+        "address": addressJson,
+        "firstName": updatedUser.firstName,
+        "lastName": updatedUser.lastName,
+        "picURL": updatedUser.picURL,
+        "createdAt": updatedUser.createdAt,
+        "updatedAt": updatedUser.updatedAt
+    };
+    
+    io:println("✅ User updated successfully: " + userId);
+    
+    return {
+        "status": "success",
+        "message": "User updated successfully",
+        "user": userResponse
+    };
+}
+
+// Handle update user endpoint
+public function handleUpdateUser(mongodb:Database db, string userId, json updateRequest) returns json|http:BadRequest|http:InternalServerError {
+    do {
+        // Parse the update request
+        UpdateUserRequest userUpdateRequest = check updateRequest.cloneWithType(UpdateUserRequest);
+        
+        // Delegate to update function
+        json|error result = updateUser(db, userId, userUpdateRequest);
+        if result is error {
+            io:println("❌ Error updating user: " + result.message());
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        
+        return result;
+        
+    } on fail error e {
+        io:println("❌ Invalid user update request: " + e.message());
+        return http:BAD_REQUEST;
+    }
+}

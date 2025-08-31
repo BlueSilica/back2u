@@ -1,6 +1,7 @@
 import ballerina/http;
 import ballerina/io;
 import ballerina/mime;
+import ballerina/time;
 import ballerinax/mongodb;
 import Backend.user;
 import Backend.chat;
@@ -84,8 +85,10 @@ service / on new http:Listener(8080) {
         return user:handleCreateUser(btuDb, userRequest);
     }
 
-    // Update user endpoint (simple implementation)
+    // Update user endpoint
     resource function put users/[string userId](@http:Payload json updateRequest) returns json|http:BadRequest|http:InternalServerError {
+        io:println("📝 Updating user: " + userId);
+        
         // Get database
         mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
         if btuDbResult is error {
@@ -93,14 +96,8 @@ service / on new http:Listener(8080) {
         }
         mongodb:Database btuDb = btuDbResult;
         
-        // Simple response for now - you can implement full update logic later
-        json response = {
-            "message": "User update endpoint ready",
-            "userId": userId,
-            "data": updateRequest
-        };
-        
-        return response;
+        // Delegate to user module
+        return user:handleUpdateUser(btuDb, userId, updateRequest);
     }
 
     // Login endpoint
@@ -486,6 +483,145 @@ service / on new http:Listener(8080) {
         };
     }
 
+    // ============ HTTP POLLING ENDPOINTS FOR REAL-TIME FEATURES ============
+    
+    // Get recent chat activity for a user (for notifications)
+    resource function get chat/users/[string userEmail]/activity/since/[string timestamp]() returns json|http:InternalServerError {
+        io:println("🔔 Getting chat activity for user: " + userEmail + " since: " + timestamp);
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Get messages where user is the receiver and timestamp is after the given timestamp
+        mongodb:Collection messagesCollection = check btuDb->getCollection("messages");
+        
+        // Convert timestamp string to integer for comparison
+        int|error timestampInt = int:fromString(timestamp);
+        if timestampInt is error {
+            timestampInt = 0;
+        }
+        
+        map<json> filter = {
+            "receiverEmail": userEmail,
+            "timestamp": {
+                "$gt": timestampInt.toString()
+            }
+        };
+        
+        stream<map<json>, error?> findResult = check messagesCollection->find(filter);
+        map<json>[] messages = check from map<json> message in findResult select message;
+        
+        json[] activityMessages = [];
+        foreach map<json> message in messages {
+            json activityMessage = {
+                "messageId": message.get("messageId"),
+                "roomId": message.get("roomId"),
+                "senderEmail": message.get("senderEmail"),
+                "message": message.get("message"),
+                "timestamp": message.get("timestamp"),
+                "status": message.get("status")
+            };
+            activityMessages.push(activityMessage);
+        }
+        
+        json response = {
+            "status": "success",
+            "userEmail": userEmail,
+            "newMessages": activityMessages,
+            "messageCount": activityMessages.length(),
+            "lastChecked": timestamp,
+            "currentTimestamp": time:utcNow()[0].toString()
+        };
+        
+        return response;
+    }
+    
+    // Get unread message count for a user
+    resource function get chat/users/[string userEmail]/unread/count() returns json|http:InternalServerError {
+        io:println("📊 Getting unread message count for user: " + userEmail);
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        mongodb:Collection messagesCollection = check btuDb->getCollection("messages");
+        
+        map<json> filter = {
+            "receiverEmail": userEmail,
+            "status": "sent" // Unread messages have status "sent"
+        };
+        
+        int unreadCount = check messagesCollection->countDocuments(filter);
+        
+        json response = {
+            "status": "success",
+            "userEmail": userEmail,
+            "unreadCount": unreadCount,
+            "timestamp": time:utcNow()[0].toString()
+        };
+        
+        return response;
+    }
+    
+    // Mark messages as read
+    resource function put chat/messages/mark-read(@http:Payload json payload) returns json|http:BadRequest|http:InternalServerError {
+        io:println("✅ Marking messages as read");
+        
+        // Extract data from payload
+        json|error userEmailField = payload.userEmail;
+        json|error roomIdField = payload.roomId;
+        
+        if userEmailField is error || roomIdField is error {
+            return http:BAD_REQUEST;
+        }
+        
+        string userEmail = userEmailField.toString();
+        string roomId = roomIdField.toString();
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        mongodb:Collection messagesCollection = check btuDb->getCollection("messages");
+        
+        // Update all unread messages in the room for this user
+        map<json> filter = {
+            "roomId": roomId,
+            "receiverEmail": userEmail,
+            "status": "sent"
+        };
+        
+        map<json> update = {
+            "$set": {
+                "status": "read",
+                "readTimestamp": time:utcNow()[0].toString()
+            }
+        };
+        
+        mongodb:UpdateResult updateResult = check messagesCollection->updateMany(filter, update);
+        
+        json response = {
+            "status": "success",
+            "message": "Messages marked as read",
+            "roomId": roomId,
+            "userEmail": userEmail,
+            "messagesUpdated": updateResult.modifiedCount,
+            "timestamp": time:utcNow()[0].toString()
+        };
+        
+        return response;
+    }
+
     // ============ LOST ITEM ENDPOINTS ============
 
     // Report a lost item
@@ -698,6 +834,125 @@ service / on new http:Listener(8080) {
             io:println("❌ Invalid found item request payload: " + e.message());
             return http:BAD_REQUEST;
         }
+    }
+
+    // Get all found items with optional filtering
+    resource function get founditems(string? category = (), string? city = (), string? state = (), 
+                                    string? status = ()) returns json|http:InternalServerError {
+        io:println("🔍 Getting found items with filters - category: " + (category ?: "none") + 
+                  ", city: " + (city ?: "none") + ", state: " + (state ?: "none") + 
+                  ", status: " + (status ?: "none"));
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Delegate to founditem module
+        json|error result = founditem:getAllFoundItems(btuDb, category, city, state, status);
+        if result is error {
+            io:println("❌ Error getting found items: " + result.message());
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        
+        return result;
+    }
+
+    // Get found item by ID
+    resource function get founditems/[string itemId]() returns json|http:InternalServerError {
+        io:println("🔍 Getting found item by ID: " + itemId);
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Delegate to founditem module
+        json|error result = founditem:getFoundItemById(btuDb, itemId);
+        if result is error {
+            io:println("❌ Error getting found item: " + result.message());
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        
+        return result;
+    }
+
+    // Get found items by location
+    resource function get founditems/location/[decimal latitude]/[decimal longitude](decimal radiusKm = 10.0) returns json|http:InternalServerError {
+        io:println("🌍 Getting found items by location: lat=" + latitude.toString() + ", lng=" + longitude.toString() + ", radius=" + radiusKm.toString());
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Delegate to founditem module
+        json|error result = founditem:getFoundItemsByLocation(btuDb, latitude, longitude, radiusKm);
+        if result is error {
+            io:println("❌ Error getting found items by location: " + result.message());
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        
+        return result;
+    }
+
+    // Update found item status
+    resource function put founditems/[string itemId]/status(@http:Payload json payload) returns json|http:BadRequest|http:InternalServerError {
+        io:println("📝 Updating found item status for ID: " + itemId);
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Extract status from payload
+        json|error statusField = payload.status;
+        if statusField is error {
+            return {
+                "status": "error",
+                "message": "Status field is required"
+            };
+        }
+        
+        string newStatus = statusField.toString();
+        
+        // Delegate to founditem module
+        json|error result = founditem:updateFoundItemStatus(btuDb, itemId, newStatus);
+        if result is error {
+            io:println("❌ Error updating found item status: " + result.message());
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        
+        return result;
+    }
+
+    // Get found items by finder email
+    resource function get founditems/finder/[string finderEmail]() returns json|http:InternalServerError {
+        io:println("👤 Getting found items by finder: " + finderEmail);
+        
+        // Get database
+        mongodb:Database|error btuDbResult = mongoDb->getDatabase("btu");
+        if btuDbResult is error {
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        mongodb:Database btuDb = btuDbResult;
+        
+        // Delegate to founditem module
+        json|error result = founditem:getFoundItemsByFinderEmail(btuDb, finderEmail);
+        if result is error {
+            io:println("❌ Error getting found items by finder: " + result.message());
+            return http:INTERNAL_SERVER_ERROR;
+        }
+        
+        return result;
     }
 
     // Explicitly handle OPTIONS preflight requests for the founditems endpoint
